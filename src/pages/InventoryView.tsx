@@ -29,8 +29,10 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
     .then(({data, error})=>{
       if(error){ alert(error.message); return }
       setRows(data||[])
-      const areas = Array.from(new Set((data||[]).map((r:any)=>r.area)))
-      const cats = Array.from(new Set((data||[]).map((r:any)=>r.category)))
+     const areas = Array.from(new Set((data || []).map((r: any) => String(r.area)))) as string[];
+
+     const cats  = Array.from(new Set((data || []).map((r: any) => String(r.category)))) as string[];
+
       setAreas(areas); setCats(cats)
     })
   },[deptId, user.department_id, user.role])
