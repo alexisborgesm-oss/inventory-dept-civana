@@ -10,11 +10,11 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
   const [users,setUsers]=useState<any[]>([])
   const [deps,setDeps]=useState<any[]>([])
 
-  // ---- Modal de USUARIOS (tal cual tenías) ----
+  // ---- Modal USUARIOS (existente) ----
   const [open,setOpen]=useState(false)
   const [payload,setPayload]=useState<any>({})
 
-  // ---- Modal de DEPARTAMENTOS (nuevo) ----
+  // ---- Modal DEPARTAMENTOS (nuevo) ----
   const [openDep,setOpenDep]=useState(false)
   const [depPayload,setDepPayload]=useState<any>({})  // { id?: number, name: string }
 
@@ -27,14 +27,14 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
     setDeps(d||[])
   }
 
-  // ======== USUARIOS (existente) ========
+  // ======== USUARIOS ========
   function openModal(initial:any={ id:null, username:'', password:'', role:'standard', department_id:null }){
     setPayload(initial); setOpen(true)
   }
 
   async function save(){
     if(!confirm('Are you sure?')) return
-    const body = { ...payload }
+    const body = { ...payload, department_id: payload.role==='super_admin' ? null : payload.department_id }
     const { error } = payload.id
       ? await supabase.from('users').update(body).eq('id', payload.id)
       : await supabase.from('users').insert(body)
@@ -49,15 +49,14 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
     refresh()
   }
 
-  // ======== DEPARTAMENTOS (nuevo) ========
+  // ======== DEPARTAMENTOS ========
   function openDepModal(initial:any={ id:null, name:'' }){
     setDepPayload(initial); setOpenDep(true)
   }
 
   async function saveDepartment(){
     if(!depPayload?.name || !String(depPayload.name).trim()){
-      alert('Department name is required')
-      return
+      alert('Department name is required'); return
     }
     if(!confirm('Save department?')) return
     const body = { name: String(depPayload.name).trim() }
@@ -77,13 +76,12 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
   async function removeDepartment(id:number){
     if(!confirm('Delete department? Users linked to this department may block deletion if constraints exist.')) return
     const { error } = await supabase.from('departments').delete().eq('id', id)
-    if(error){
-      // Si hay FK, Supabase devolverá error. Lo mostramos sin romper nada.
-      alert(error.message)
-      return
-    }
+    if(error){ alert(error.message); return }
     refresh()
   }
+
+  // Mapa id->nombre para mostrar en tabla de usuarios
+  const depNameById: Record<number,string> = Object.fromEntries(deps.map((d:any)=>[d.id,d.name])) as any
 
   return (
     <div className="card">
@@ -102,7 +100,7 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
               <tr key={u.id}>
                 <td>{u.username}</td>
                 <td>{u.role}</td>
-                <td>{u.department_id??'-'}</td>
+                <td>{u.department_id ? (depNameById[u.department_id] ?? u.department_id) : '-'}</td>
                 <td style={{display:'flex',gap:8}}>
                   <button className="btn btn-secondary" onClick={()=>openModal(u)}>Modify</button>
                   <button className="btn btn-danger" onClick={()=>removeUser(u.id)}>Delete</button>
@@ -153,21 +151,46 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
         </div>
         <div className="field">
           <label>Role</label>
-          <select className="select" value={payload.role||'standard'}
-                  onChange={e=>setPayload({...payload, role:e.target.value})}>
+          <select
+            className="select"
+            value={payload.role||'standard'}
+            onChange={e=>{
+              const role = e.target.value as any
+              setPayload({
+                ...payload,
+                role,
+                department_id: role==='super_admin' ? null : payload.department_id
+              })
+            }}
+          >
             <option value="standard">standard</option>
             <option value="admin">admin</option>
             <option value="super_admin">super_admin</option>
           </select>
         </div>
         <div className="field">
-          <label>Department (null for super_admin)</label>
-          <input className="input" type="number" value={payload.department_id??''}
-                 onChange={e=>setPayload({...payload, department_id:e.target.value?Number(e.target.value):null})}/>
+          <label>Department</label>
+          <select
+            className="select"
+            disabled={payload.role === 'super_admin'}
+            value={payload.department_id ?? ''} // '' => null
+            onChange={(e)=>{
+              const v = e.target.value
+              setPayload({
+                ...payload,
+                department_id: v === '' ? null : Number(v)
+              })
+            }}
+          >
+            <option value="">No department (super_admin)</option>
+            {deps.map((d:any)=>(
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
         </div>
       </Modal>
 
-      {/* MODAL DEPARTAMENTO (nuevo) */}
+      {/* MODAL DEPARTAMENTO */}
       <Modal open={openDep} onClose={()=>setOpenDep(false)} title="Department" footer={<>
         <button className="btn btn-secondary" onClick={()=>setOpenDep(false)}>Cancel</button>
         <button className="btn btn-primary" onClick={saveDepartment}>Save</button>
