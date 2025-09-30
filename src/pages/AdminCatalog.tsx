@@ -9,18 +9,25 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
 
   const [users,setUsers]=useState<any[]>([])
   const [deps,setDeps]=useState<any[]>([])
+
+  // ---- Modal de USUARIOS (tal cual tenías) ----
   const [open,setOpen]=useState(false)
   const [payload,setPayload]=useState<any>({})
+
+  // ---- Modal de DEPARTAMENTOS (nuevo) ----
+  const [openDep,setOpenDep]=useState(false)
+  const [depPayload,setDepPayload]=useState<any>({})  // { id?: number, name: string }
 
   useEffect(()=>{ refresh() },[])
 
   async function refresh(){
     const { data: u } = await supabase.from('users').select('id,username,role,department_id')
     setUsers(u||[])
-    const { data: d } = await supabase.from('departments').select('*')
+    const { data: d } = await supabase.from('departments').select('*').order('id', { ascending:true })
     setDeps(d||[])
   }
 
+  // ======== USUARIOS (existente) ========
   function openModal(initial:any={ id:null, username:'', password:'', role:'standard', department_id:null }){
     setPayload(initial); setOpen(true)
   }
@@ -42,40 +49,138 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
     refresh()
   }
 
+  // ======== DEPARTAMENTOS (nuevo) ========
+  function openDepModal(initial:any={ id:null, name:'' }){
+    setDepPayload(initial); setOpenDep(true)
+  }
+
+  async function saveDepartment(){
+    if(!depPayload?.name || !String(depPayload.name).trim()){
+      alert('Department name is required')
+      return
+    }
+    if(!confirm('Save department?')) return
+    const body = { name: String(depPayload.name).trim() }
+    let error
+    if (depPayload.id) {
+      const res = await supabase.from('departments').update(body).eq('id', depPayload.id)
+      error = res.error
+    } else {
+      const res = await supabase.from('departments').insert(body)
+      error = res.error
+    }
+    if(error){ alert(error.message); return }
+    setOpenDep(false)
+    refresh()
+  }
+
+  async function removeDepartment(id:number){
+    if(!confirm('Delete department? Users linked to this department may block deletion if constraints exist.')) return
+    const { error } = await supabase.from('departments').delete().eq('id', id)
+    if(error){
+      // Si hay FK, Supabase devolverá error. Lo mostramos sin romper nada.
+      alert(error.message)
+      return
+    }
+    refresh()
+  }
+
   return (
     <div className="card">
       <h3 style={{marginTop:0}}>Admin-Catalog (Users & Departments)</h3>
+
+      {/* ======= USERS ======= */}
       <section>
         <h4>Users</h4>
         <button className="btn btn-primary" onClick={()=>openModal()}>New user</button>
-        <table><thead><tr><th>Username</th><th>Role</th><th>Department</th><th>Actions</th></tr></thead><tbody>
-          {users.map(u=>(<tr key={u.id}><td>{u.username}</td><td>{u.role}</td><td>{u.department_id??'-'}</td><td style={{display:'flex',gap:8}}>
-            <button className="btn btn-secondary" onClick={()=>openModal(u)}>Modify</button>
-            <button className="btn btn-danger" onClick={()=>removeUser(u.id)}>Delete</button>
-          </td></tr>))}
-        </tbody></table>
-      </section>
-      <section style={{marginTop:12}}>
-        <h4>Departments</h4>
-        <table><thead><tr><th>ID</th><th>Name</th></tr></thead><tbody>
-          {deps.map(d=>(<tr key={d.id}><td>{d.id}</td><td>{d.name}</td></tr>))}
-        </tbody></table>
+        <table>
+          <thead>
+            <tr><th>Username</th><th>Role</th><th>Department</th><th>Actions</th></tr>
+          </thead>
+          <tbody>
+            {users.map(u=>(
+              <tr key={u.id}>
+                <td>{u.username}</td>
+                <td>{u.role}</td>
+                <td>{u.department_id??'-'}</td>
+                <td style={{display:'flex',gap:8}}>
+                  <button className="btn btn-secondary" onClick={()=>openModal(u)}>Modify</button>
+                  <button className="btn btn-danger" onClick={()=>removeUser(u.id)}>Delete</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </section>
 
+      {/* ======= DEPARTMENTS ======= */}
+      <section style={{marginTop:12}}>
+        <h4>Departments</h4>
+        <button className="btn btn-primary" onClick={()=>openDepModal()}>New department</button>
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Name</th><th>Actions</th></tr>
+          </thead>
+          <tbody>
+            {deps.map(d=>(
+              <tr key={d.id}>
+                <td>{d.id}</td>
+                <td>{d.name}</td>
+                <td style={{display:'flex',gap:8}}>
+                  <button className="btn btn-secondary" onClick={()=>openDepModal(d)}>Modify</button>
+                  <button className="btn btn-danger" onClick={()=>removeDepartment(d.id)}>Delete</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+
+      {/* MODAL USUARIO */}
       <Modal open={open} onClose={()=>setOpen(false)} title="User" footer={<>
         <button className="btn btn-secondary" onClick={()=>setOpen(false)}>Cancel</button>
         <button className="btn btn-primary" onClick={save}>Save</button>
       </>}>
-        <div className="field"><label>Username</label><input className="input" value={payload.username||''} onChange={e=>setPayload({...payload, username:e.target.value})}/></div>
-        <div className="field"><label>Password</label><input className="input" value={payload.password||''} onChange={e=>setPayload({...payload, password:e.target.value})}/></div>
-        <div className="field"><label>Role</label>
-          <select className="select" value={payload.role||'standard'} onChange={e=>setPayload({...payload, role:e.target.value})}>
+        <div className="field">
+          <label>Username</label>
+          <input className="input" value={payload.username||''}
+                 onChange={e=>setPayload({...payload, username:e.target.value})}/>
+        </div>
+        <div className="field">
+          <label>Password</label>
+          <input className="input" value={payload.password||''}
+                 onChange={e=>setPayload({...payload, password:e.target.value})}/>
+        </div>
+        <div className="field">
+          <label>Role</label>
+          <select className="select" value={payload.role||'standard'}
+                  onChange={e=>setPayload({...payload, role:e.target.value})}>
             <option value="standard">standard</option>
             <option value="admin">admin</option>
             <option value="super_admin">super_admin</option>
           </select>
         </div>
-        <div className="field"><label>Department (null for super_admin)</label><input className="input" type="number" value={payload.department_id??''} onChange={e=>setPayload({...payload, department_id:e.target.value?Number(e.target.value):null})}/></div>
+        <div className="field">
+          <label>Department (null for super_admin)</label>
+          <input className="input" type="number" value={payload.department_id??''}
+                 onChange={e=>setPayload({...payload, department_id:e.target.value?Number(e.target.value):null})}/>
+        </div>
+      </Modal>
+
+      {/* MODAL DEPARTAMENTO (nuevo) */}
+      <Modal open={openDep} onClose={()=>setOpenDep(false)} title="Department" footer={<>
+        <button className="btn btn-secondary" onClick={()=>setOpenDep(false)}>Cancel</button>
+        <button className="btn btn-primary" onClick={saveDepartment}>Save</button>
+      </>}>
+        <div className="field">
+          <label>Name</label>
+          <input
+            className="input"
+            value={depPayload.name || ''}
+            onChange={e=>setDepPayload({...depPayload, name: e.target.value})}
+            placeholder="e.g., Housekeeping"
+          />
+        </div>
       </Modal>
     </div>
   )
