@@ -114,7 +114,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
     const toRemove = Array.from(currentSet).filter(id=> !checkedAreas.has(id))
 
     if(toAdd.length){
-      const { error: e1 } = await supabase.from('area_items').insert(toAdd, { upsert: true })
+      const { error: e1 } = await supabase.from('area_items').upsert(toAdd, { onConflict: 'area_id,item_id' })
       if(e1){ alert(e1.message); return }
     }
     if(toRemove.length){
