@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../utils/supabase'
+import { Modal } from '../components/Modal'
 
 type User = { id:string, username:string, role:'super_admin'|'admin'|'standard', department_id:number|null }
 
@@ -16,6 +17,10 @@ const Threshold: React.FC<{user:User}> = ({user})=>{
   const [items, setItems] = useState<Item[]>([])              // items asignados al área activa (con is_valuable)
   const [existing, setExisting] = useState<Record<number, ThresholdRec>>({}) // por item_id
   const [qtyByItem, setQtyByItem] = useState<Record<number, string>>({})     // inputs
+
+  // Popup de éxito
+  const [successOpen, setSuccessOpen] = useState(false)
+  const [savedSummary, setSavedSummary] = useState<Array<{name:string, qty:number}>>([])
 
   useEffect(()=>{ loadAreas() },[])
 
@@ -91,30 +96,39 @@ const Threshold: React.FC<{user:User}> = ({user})=>{
       })
       .filter(Boolean) as Array<{area_id:number,item_id:number,expected_qty:number}>
 
+    // Resumen para el popup
+    const summary = rows.map(r=>{
+      const it = items.find(x=>x.id===r.item_id)
+      return { name: it?.name ?? `#${r.item_id}`, qty: r.expected_qty }
+    })
+
     try{
       // UPSERT con conflicto en (area_id,item_id)
       const { error: upErr } = await supabase
         .from('thresholds')
         .upsert(rows, { onConflict: 'area_id,item_id' })
-      if(!upErr){
-        await loadAreaData(activeAreaId)
-        return
-      }
 
-      // Fallback: update/insert por fila (si en algún entorno faltara el constraint)
-      for(const r of rows){
-        const existingRec = existing[r.item_id]
-        if(existingRec){
-          const { error } = await supabase.from('thresholds')
-            .update({ expected_qty: r.expected_qty })
-            .eq('id', existingRec.id)
-          if(error) throw error
-        }else{
-          const { error } = await supabase.from('thresholds').insert(r) // sin id
-          if(error) throw error
+      if(upErr){
+        // Fallback: update/insert por fila (si faltara el constraint en algún entorno)
+        for(const r of rows){
+          const existingRec = existing[r.item_id]
+          if(existingRec){
+            const { error } = await supabase.from('thresholds')
+              .update({ expected_qty: r.expected_qty })
+              .eq('id', existingRec.id)
+            if(error) throw error
+          }else{
+            const { error } = await supabase.from('thresholds').insert(r) // sin id
+            if(error) throw error
+          }
         }
       }
+
+      // Recargar y mostrar popup de éxito
       await loadAreaData(activeAreaId)
+      setSavedSummary(summary)
+      setSuccessOpen(true)
+
     }catch(err:any){
       if(String(err?.message || err).includes('valioso qty > 1')) return
       alert(err?.message || String(err))
@@ -188,6 +202,31 @@ const Threshold: React.FC<{user:User}> = ({user})=>{
           )}
         </>
       )}
+
+      {/* Popup de confirmación */}
+      <Modal
+        open={successOpen}
+        onClose={()=>setSuccessOpen(false)}
+        title="Threshold saved"
+        footer={
+          <button className="btn btn-primary" onClick={()=>setSuccessOpen(false)}>OK</button>
+        }
+      >
+        {savedSummary.length === 0 ? (
+          <div>No changes were made.</div>
+        ) : (
+          <div>
+            <div style={{marginBottom:8, opacity:.8}}>
+              The expected quantity was saved for the following item{savedSummary.length>1?'s':''}:
+            </div>
+            <ul style={{margin:'0 0 8px 18px'}}>
+              {savedSummary.map((s,idx)=>(
+                <li key={idx}><strong>{s.name}</strong> — Expected qty: {s.qty}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }
