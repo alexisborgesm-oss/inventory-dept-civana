@@ -10,11 +10,11 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
   const [users,setUsers]=useState<any[]>([])
   const [deps,setDeps]=useState<any[]>([])
 
-  // ---- Modal USUARIOS (existente) ----
+  // ---- Modal USUARIOS ----
   const [open,setOpen]=useState(false)
   const [payload,setPayload]=useState<any>({})
 
-  // ---- Modal DEPARTAMENTOS (nuevo) ----
+  // ---- Modal DEPARTAMENTOS ----
   const [openDep,setOpenDep]=useState(false)
   const [depPayload,setDepPayload]=useState<any>({})  // { id?: number, name: string }
 
@@ -73,11 +73,106 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
     refresh()
   }
 
-  async function removeDepartment(id:number){
-    if(!confirm('Delete department? Users linked to this department may block deletion if constraints exist.')) return
-    const { error } = await supabase.from('departments').delete().eq('id', id)
-    if(error){ alert(error.message); return }
-    refresh()
+  async function removeDepartmentCascade(departmentId:number){
+    const ok = confirm(
+      '⚠️ Esto borrará PERMANENTEMENTE el departamento y TODOS sus datos asociados:\n' +
+      '• Usuarios del departamento\n' +
+      '• Áreas del departamento\n' +
+      '• Thresholds de esas áreas\n' +
+      '• Records y sus items de esas áreas\n' +
+      '• Inventarios mensuales del departamento (y sus items)\n' +
+      '• Enlaces Área–Item (area_items)\n' +
+      '• Además, items y categorías quedarán eliminados SOLO si ya no los usa ningún otro departamento\n\n' +
+      '¿Deseas continuar?'
+    )
+    if(!ok) return
+
+    try{
+      // 1) Áreas del departamento
+      const { data: areaRows, error: eAreas } = await supabase.from('areas').select('id').eq('department_id', departmentId)
+      if(eAreas) throw eAreas
+      const areaIds = (areaRows||[]).map(r=>r.id)
+
+      // 2) Inventarios mensuales (dept-scope)
+      const { data: mRows, error: eM } = await supabase.from('monthly_inventories').select('id').eq('department_id', departmentId)
+      if(eM) throw eM
+      const monthlyIds = (mRows||[]).map(r=>r.id)
+      if(monthlyIds.length){
+        const { error } = await supabase.from('monthly_inventory_items').delete().in('monthly_inventory_id', monthlyIds)
+        if(error) throw error
+        const { error: eDelM } = await supabase.from('monthly_inventories').delete().in('id', monthlyIds)
+        if(eDelM) throw eDelM
+      }
+
+      // 3) Records de las áreas del departamento
+      if(areaIds.length){
+        const { data: rRows, error: eR } = await supabase.from('records').select('id').in('area_id', areaIds)
+        if(eR) throw eR
+        const recIds = (rRows||[]).map(r=>r.id)
+        if(recIds.length){
+          const { error } = await supabase.from('record_items').delete().in('record_id', recIds)
+          if(error) throw error
+          const { error: eDelRec } = await supabase.from('records').delete().in('id', recIds)
+          if(eDelRec) throw eDelRec
+        }
+
+        // 4) Thresholds de esas áreas
+        const { error: eT } = await supabase.from('thresholds').delete().in('area_id', areaIds)
+        if(eT) throw eT
+
+        // 5) Enlaces área–item de esas áreas
+        const { data: areaItemLinks, error: eAILSel } = await supabase.from('area_items').select('item_id').in('area_id', areaIds)
+        if(eAILSel) throw eAILSel
+        const deptItemIds = Array.from(new Set((areaItemLinks||[]).map(r=>r.item_id)))
+
+        const { error: eAIL } = await supabase.from('area_items').delete().in('area_id', areaIds)
+        if(eAIL) throw eAIL
+
+        // 6) Borrar ÁREAS
+        const { error: eAreasDel } = await supabase.from('areas').delete().in('id', areaIds)
+        if(eAreasDel) throw eAreasDel
+
+        // 7) Intentar borrar ITEMS huérfanos (sin enlaces en ninguna área)
+        if(deptItemIds.length){
+          const { data: stillUsed, error: eStill } = await supabase
+            .from('area_items')
+            .select('item_id')
+            .in('item_id', deptItemIds)
+          if(eStill) throw eStill
+          const usedSet = new Set((stillUsed||[]).map(r=>r.item_id))
+          const itemsToDelete = deptItemIds.filter(id=> !usedSet.has(id))
+          if(itemsToDelete.length){
+            const { error: eDelItems } = await supabase.from('items').delete().in('id', itemsToDelete)
+            if(eDelItems) throw eDelItems
+          }
+
+          // 8) Intentar borrar CATEGORÍAS huérfanas (sin items)
+          const { data: catsInUse, error: eCatsInUse } = await supabase.from('items').select('category_id')
+          if(eCatsInUse) throw eCatsInUse
+          const inUse = new Set((catsInUse||[]).map(r=>r.category_id).filter((x:any)=> x!=null))
+          const { data: allCats, error: eAllCats } = await supabase.from('categories').select('id')
+          if(eAllCats) throw eAllCats
+          const catToDelete = (allCats||[]).map(r=>r.id).filter((id:any)=> !inUse.has(id))
+          if(catToDelete.length){
+            const { error: eDelCats } = await supabase.from('categories').delete().in('id', catToDelete)
+            if(eDelCats) throw eDelCats
+          }
+        }
+      }
+
+      // 9) Usuarios del departamento
+      const { error: eUsers } = await supabase.from('users').delete().eq('department_id', departmentId)
+      if(eUsers) throw eUsers
+
+      // 10) Finalmente, el DEPARTAMENTO
+      const { error: eDept } = await supabase.from('departments').delete().eq('id', departmentId)
+      if(eDept) throw eDept
+
+      alert('Department and all associated data deleted.')
+      refresh()
+    }catch(err:any){
+      alert('Error deleting department: ' + (err?.message || String(err)))
+    }
   }
 
   // Mapa id->nombre para mostrar en tabla de usuarios
@@ -126,7 +221,7 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
                 <td>{d.name}</td>
                 <td style={{display:'flex',gap:8}}>
                   <button className="btn btn-secondary" onClick={()=>openDepModal(d)}>Modify</button>
-                  <button className="btn btn-danger" onClick={()=>removeDepartment(d.id)}>Delete</button>
+                  <button className="btn btn-danger" onClick={()=>removeDepartmentCascade(d.id)}>Delete</button>
                 </td>
               </tr>
             ))}
@@ -155,7 +250,7 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
             className="select"
             value={payload.role||'standard'}
             onChange={e=>{
-              const role = e.target.value as any
+              const role = (e.target.value as any)
               setPayload({
                 ...payload,
                 role,
