@@ -130,6 +130,12 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
     return areas
   },[areas])
 
+  // ======== NUEVO: mapa id -> nombre de categoría para mostrar en tablas ========
+  const catNameById = useMemo<Record<number, string>>(
+    () => Object.fromEntries((cats||[]).map((c:any)=>[c.id, c.name])) as Record<number,string>,
+    [cats]
+  )
+
   return (
     <div className="card">
       <h3 style={{marginTop:0}}>Catalog</h3>
@@ -175,7 +181,8 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
           {items.map(i=>(
             <tr key={i.id}>
               <td>{i.name}</td>
-              <td>{i.category_id}</td>
+              {/* ======== MOSTRAR NOMBRE DE CATEGORÍA ======== */}
+              <td>{i.category_id ? (catNameById[i.category_id] ?? i.category_id) : ''}</td>
               <td>{i.unit||''}</td>
               <td>{i.vendor||''}</td>
               <td>{i.is_valuable?'Yes':'No'}</td>
@@ -207,7 +214,32 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
         </>)}
         {entity==='item' && (<>
           <div className="field"><label>Name</label><input className="input" value={payload.name||''} onChange={e=>setPayload({...payload, name:e.target.value})}/></div>
-          <div className="field"><label>Category ID</label><input className="input" type="number" value={payload.category_id||''} onChange={e=>setPayload({...payload, category_id:Number(e.target.value)})}/></div>
+
+          {/* ======== SELECT POR NOMBRE DE CATEGORÍA (GUARDA category_id NUMÉRICO) ======== */}
+          <div className="field">
+            <label>Category</label>
+            <select
+              className="select"
+              value={payload.category_id ?? ''} // '' => null
+              onChange={(e)=>{
+                const v = e.target.value
+                const cid = v === '' ? null : Number(v)
+                const cat = (cats||[]).find((c:any)=>c.id===cid)
+                setPayload({
+                  ...payload,
+                  category_id: cid,
+                  // Si usas el flag auto por nombre 'Valioso', lo mantenemos actualizado visualmente:
+                  is_valuable: cat ? (String(cat.name).toLowerCase() === 'valioso') : false
+                })
+              }}
+            >
+              <option value="">Select a category</option>
+              {cats.map((c:any)=>(
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+
           <div className="field"><label>Unit (optional)</label><input className="input" value={payload.unit||''} onChange={e=>setPayload({...payload, unit:e.target.value})}/></div>
           <div className="field"><label>Vendor (optional)</label><input className="input" value={payload.vendor||''} onChange={e=>setPayload({...payload, vendor:e.target.value})}/></div>
           <div className="field"><label>Valuable category (auto if category name 'Valioso')</label><input className="input" value={payload.is_valuable?'Yes':'No'} disabled/></div>
