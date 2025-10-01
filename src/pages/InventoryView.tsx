@@ -22,7 +22,7 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
   const [areaFilter, setAreaFilter] = useState<string>('all')     // 'all' | 'no-areas' | <area name>
   const [catFilter, setCatFilter] = useState<string>('all')
 
-  // Mapa (name+vendor) -> article_number
+  // (name+vendor) -> article_number
   const [itemNumMap, setItemNumMap] = useState<Map<string, string>>(new Map())
 
   useEffect(()=>{
@@ -36,7 +36,7 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
     if(!effectiveDept) return
 
     ;(async ()=>{
-      // 1) Matriz de inventario por departamento
+      // 1) Matriz base
       const { data, error } = await supabase.rpc('inventory_matrix', { p_department_id: effectiveDept })
       if(error){ alert(error.message); return }
 
@@ -64,20 +64,20 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
       })
 
       setRows(enriched)
-      const areasSet = Array.from(new Set((enriched || []).map((r) => String(r.area)))) as string[]
-      const catsSet  = Array.from(new Set((enriched || []).map((r) => String(r.category)))) as string[]
+      const areasSet = Array.from(new Set((enriched || []).map((r) => String(r.area)))).sort((a,b)=>a.localeCompare(b))
+      const catsSet  = Array.from(new Set((enriched || []).map((r) => String(r.category)))).sort((a,b)=>a.localeCompare(b))
       setAreas(areasSet); setCats(catsSet)
     })()
   },[deptId, user.department_id, user.role])
 
-  // --- Preparar datos visibles y pivotados ---
+  // --- Pivot/agrupación ---
   type PivotRow = {
     category: string
     vendor: string
     item: string
     article_number: string | null
     areas: Record<string, number> // sumas por área
-    total: number                 // suma de todas las áreas
+    total: number                 // suma de todas las áreas (global)
   }
 
   const { displayedAreas, groupedByCategory, colCount } = useMemo(()=>{
@@ -85,17 +85,17 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
     let base = rows
     if(catFilter !== 'all') base = base.filter(r => r.category === catFilter)
 
-    // 2) Armar lista de áreas a mostrar según filtro de áreas
+    // 2) Áreas a mostrar según filtro
     const allAreas = Array.from(new Set(base.map(r => r.area))).sort((a,b)=>a.localeCompare(b))
     let showAreas: string[] = []
     if (areaFilter === 'all') showAreas = allAreas
     else if (areaFilter === 'no-areas') showAreas = []
     else showAreas = allAreas.filter(a => a === areaFilter)
 
-    // 3) Construir pivote: llave por (category, vendor, item, article_number)
+    // 3) Construir pivote
     const keyOf = (r:Row) => `${r.category}||${r.vendor||''}||${r.item}||${r.article_number||''}`
-
     const map = new Map<string, PivotRow>()
+
     for (const r of base) {
       const k = keyOf(r)
       let acc = map.get(k)
@@ -110,11 +110,12 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
         }
         map.set(k, acc)
       }
-      acc.areas[r.area] = (acc.areas[r.area] || 0) + (Number(r.qty) || 0)
-      acc.total += (Number(r.qty) || 0)
+      const n = Number(r.qty) || 0
+      acc.areas[r.area] = (acc.areas[r.area] || 0) + n
+      acc.total += n
     }
 
-    // 4) Ordenar por categoría > item > vendor > item_number
+    // 4) Orden
     const pivotRows = Array.from(map.values()).sort((a,b)=>{
       const c = a.category.localeCompare(b.category); if(c!==0) return c
       const i = a.item.localeCompare(b.item); if(i!==0) return i
@@ -130,10 +131,16 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
     }
 
     // 6) Columnas: Vendor | Item | Item number | [Áreas*] | Total
-    const cols = 3 /*vendor,item,item#*/ + showAreas.length + 1 /*total*/
+    const cols = 3 + showAreas.length + 1
 
     return { displayedAreas: showAreas, groupedByCategory: grouped, colCount: cols }
   }, [rows, catFilter, areaFilter])
+
+  // helper: suma de las áreas que se muestran en una fila
+  const sumDisplayedAreas = (pr: PivotRow) => {
+    if (displayedAreas.length === 0) return pr.total // No Areas => total global
+    return displayedAreas.reduce((s, a)=> s + (pr.areas[a] || 0), 0)
+  }
 
   return (
     <div>
@@ -149,11 +156,11 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
           <select className="select" value={areaFilter} onChange={e=> setAreaFilter(e.target.value)}>
             <option value="all">All areas</option>
             <option value="no-areas">No Areas (Totals)</option>
-            {areas.sort((a,b)=>a.localeCompare(b)).map(a=> <option key={a} value={a}>{a}</option>)}
+            {areas.map(a=> <option key={a} value={a}>{a}</option>)}
           </select>
           <select className="select" value={catFilter} onChange={e=> setCatFilter(e.target.value)}>
             <option value="all">All categories</option>
-            {cats.sort((a,b)=>a.localeCompare(b)).map(c=> <option key={c} value={c}>{c}</option>)}
+            {cats.map(c=> <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
       </div>
@@ -187,7 +194,7 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
                     </td>
                   </tr>
 
-                  {/* Filas de ítems pivotadas por área */}
+                  {/* Filas pivotadas */}
                   {itemsInCat.map((pr, idx)=>(
                     <tr key={`${cat}-${idx}`}>
                       <td>{pr.vendor}</td>
@@ -195,10 +202,10 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
                       <td>{pr.article_number || ''}</td>
                       {displayedAreas.map(a=>{
                         const q = pr.areas[a] || 0
-                        // Mostrar vacío si 0 (estilo hoja)
-                        return <td key={`${cat}-${idx}-${a}`}>{q>0 ? q : ''}</td>
+                        // Mostrar SIEMPRE el número (incluido 0)
+                        return <td key={`${cat}-${idx}-${a}`}>{q}</td>
                       })}
-                      <td>{pr.total}</td>
+                      <td>{sumDisplayedAreas(pr)}</td>
                     </tr>
                   ))}
                 </React.Fragment>
