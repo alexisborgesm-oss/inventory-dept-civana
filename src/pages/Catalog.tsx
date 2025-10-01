@@ -30,13 +30,11 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
       const { data: d } = await supabase.from('departments').select('*').order('id')
       setDeps(d||[])
     }
-    const depFilter = user.role==='super_admin' ? undefined : user.department_id
-    const { data: a } = await supabase.from('areas')
-      .select('*')
-      .order('id')
+    const { data: a } = await supabase.from('areas').select('*').order('id')
     setAreas(a||[])
     const { data: c } = await supabase.from('categories').select('*').order('id')
     setCats(c||[])
+    // Nota: leemos de la VISTA items_with_flags (trae is_valuable calculado)
     const { data: i } = await supabase.from('items_with_flags').select('*').order('id')
     setItems(i||[])
   }
@@ -50,14 +48,43 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
   async function save(){
     if(!entity) return
     if(!confirm('Are you sure?')) return
-    const table = entity==='department'?'departments':entity==='area'?'areas':entity==='category'?'categories':'items'
-    const data = { ...payload }
-    if(entity==='area' && user.role!=='super_admin'){
-      data.department_id = user.department_id
+
+    const table =
+      entity==='department' ? 'departments' :
+      entity==='area' ? 'areas' :
+      entity==='category' ? 'categories' : 'items'
+
+    let data:any
+
+    if(entity==='item'){
+      // Sanitizar y ENVIAR solo columnas REALES de items (sin is_valuable)
+      const name = String(payload.name || '').trim()
+      const category_id = (payload.category_id ?? null)
+      const unit = String(payload.unit ?? '').trim() || null
+      const vendor = String(payload.vendor ?? '').trim() || null
+      const article_number = String(payload.article_number ?? '').trim() || null
+
+      // Validación: si la categoría elegida se llama 'Valioso', exigir article_number
+      const cat = (cats||[]).find((c:any)=> c.id === category_id)
+      const isVal = !!(cat && String(cat.name).toLowerCase() === 'valioso')
+      if(isVal && !article_number){
+        alert("Article number is required when category is 'Valioso'.")
+        return
+      }
+
+      data = { name, category_id, unit, vendor, article_number }
+    } else {
+      // Otras entidades conservan tu comportamiento original
+      data = { ...payload }
+      if(entity==='area' && user.role!=='super_admin'){
+        data.department_id = user.department_id
+      }
     }
+
     const { error } = payload.id
       ? await supabase.from(table).update(data).eq('id', payload.id)
       : await supabase.from(table).insert(data)
+
     if(error){ alert(error.message); return }
     setOpen(false); refresh()
   }
@@ -73,10 +100,8 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
   // ===== Linking UI =====
   async function openLinkModal(item:any){
     setLinkItem(item)
-    // departments selector (only for super_admin) controls what areas we display
     let currentDept = user.department_id
     if(user.role==='super_admin'){
-      // keep existing selection or default to first
       if(!linkDeptId){
         const { data: d } = await supabase.from('departments').select('id').order('id').limit(1)
         currentDept = d && d.length ? d[0].id : null
@@ -85,7 +110,6 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
         currentDept = Number(linkDeptId)
       }
     }
-    // Load areas for selected department (or all if super_admin with no dep selected)
     let q = supabase.from('areas').select('id,name,department_id').order('id')
     if(user.role!=='super_admin' && user.department_id) q = q.eq('department_id', user.department_id)
     if(user.role==='super_admin' && currentDept) q = q.eq('department_id', currentDept)
@@ -93,7 +117,6 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
     if(ea){ alert(ea.message); return }
     setLinkAreas(a||[])
 
-    // Load existing links for this item
     const { data: links, error: el } = await supabase.from('area_items').select('area_id').eq('item_id', item.id)
     if(el){ alert(el.message); return }
     const set = new Set<number>((links||[]).map(r=>r.area_id))
@@ -105,11 +128,9 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
     if(!linkItem) return
     if(!confirm('Save area assignments for this item?')) return
 
-    // current links in DB
     const { data: current } = await supabase.from('area_items').select('area_id').eq('item_id', linkItem.id)
     const currentSet = new Set<number>((current||[]).map(r=>r.area_id))
 
-    // compute adds/removes
     const toAdd = Array.from(checkedAreas).filter(id=> !currentSet.has(id)).map(area_id=> ({ area_id, item_id: linkItem.id }))
     const toRemove = Array.from(currentSet).filter(id=> !checkedAreas.has(id))
 
@@ -126,11 +147,9 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
     setLinkOpen(false)
   }
 
-  const filteredAreasForTable = useMemo(()=>{
-    return areas
-  },[areas])
+  const filteredAreasForTable = useMemo(()=> areas, [areas])
 
-  // ======== NUEVO: mapa id -> nombre de categoría para mostrar en tablas ========
+  // ======== mapa id -> nombre de categoría para mostrar en tablas ========
   const catNameById = useMemo<Record<number, string>>(
     () => Object.fromEntries((cats||[]).map((c:any)=>[c.id, c.name])) as Record<number,string>,
     [cats]
@@ -166,7 +185,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
       <section>
         <h4>Categories</h4>
         <button className="btn btn-primary" onClick={()=>openModal('category', { name:'' })}>New category</button>
-        <table><thead><tr><th>Name</th><th>Actions</th></tr></thead><tbody>
+      <table><thead><tr><th>Name</th><th>Actions</th></tr></thead><tbody>
           {cats.map(c=>(<tr key={c.id}><td>{c.name}</td><td style={{display:'flex',gap:8}}>
             <button className="btn btn-secondary" onClick={()=>openModal('category', c)}>Modify</button>
             <button className="btn btn-danger" onClick={()=>remove('category', c.id)}>Delete</button>
@@ -181,7 +200,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
           {items.map(i=>(
             <tr key={i.id}>
               <td>{i.name}</td>
-              {/* ======== MOSTRAR NOMBRE DE CATEGORÍA ======== */}
+              {/* Mostrar NOMBRE de categoría */}
               <td>{i.category_id ? (catNameById[i.category_id] ?? i.category_id) : ''}</td>
               <td>{i.unit||''}</td>
               <td>{i.vendor||''}</td>
@@ -215,7 +234,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
         {entity==='item' && (<>
           <div className="field"><label>Name</label><input className="input" value={payload.name||''} onChange={e=>setPayload({...payload, name:e.target.value})}/></div>
 
-          {/* ======== SELECT POR NOMBRE DE CATEGORÍA (GUARDA category_id NUMÉRICO) ======== */}
+          {/* Selector por NOMBRE de categoría (guarda category_id) */}
           <div className="field">
             <label>Category</label>
             <select
@@ -228,7 +247,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
                 setPayload({
                   ...payload,
                   category_id: cid,
-                  // Si usas el flag auto por nombre 'Valioso', lo mantenemos actualizado visualmente:
+                  // Solo para visualización: derive is_valuable de la categoría 'Valioso'
                   is_valuable: cat ? (String(cat.name).toLowerCase() === 'valioso') : false
                 })
               }}
@@ -261,12 +280,10 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
               onChange={async (e)=>{
                 const val = e.target.value ? Number(e.target.value) : ''
                 setLinkDeptId(val)
-                // reload areas for selected department
                 let q = supabase.from('areas').select('id,name,department_id').order('id')
                 if(val) q = q.eq('department_id', Number(val))
                 const { data: a } = await q
                 setLinkAreas(a||[])
-                // preserve checked where still visible
                 setCheckedAreas(prev=> new Set(Array.from(prev).filter(id=> (a||[]).some((ar:any)=>ar.id===id))))
               }}
             >
