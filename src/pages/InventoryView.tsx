@@ -36,11 +36,11 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
     if(!effectiveDept) return
 
     ;(async ()=>{
-      // 1) Traer matriz de inventario
+      // 1) Matriz de inventario por departamento
       const { data, error } = await supabase.rpc('inventory_matrix', { p_department_id: effectiveDept })
       if(error){ alert(error.message); return }
 
-      // 2) Traer item numbers (de toda la tabla; coste bajo y evita tocar tu RPC)
+      // 2) Item numbers (no tocamos tu RPC)
       const { data: itemsFlags, error: e2 } = await supabase
         .from('items_with_flags')
         .select('name,vendor,article_number')
@@ -70,66 +70,70 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
     })()
   },[deptId, user.department_id, user.role])
 
-  const visible = useMemo(()=>{
-    let r = rows
+  // --- Preparar datos visibles y pivotados ---
+  type PivotRow = {
+    category: string
+    vendor: string
+    item: string
+    article_number: string | null
+    areas: Record<string, number> // sumas por área
+    total: number                 // suma de todas las áreas
+  }
 
-    if(catFilter!=='all') r = r.filter(x=>x.category===catFilter)
-    if(areaFilter!=='all' && areaFilter!=='no-areas'){
-      r = r.filter(x=>x.area===areaFilter)
+  const { displayedAreas, groupedByCategory, colCount } = useMemo(()=>{
+    // 1) Filtrar por categoría
+    let base = rows
+    if(catFilter !== 'all') base = base.filter(r => r.category === catFilter)
+
+    // 2) Armar lista de áreas a mostrar según filtro de áreas
+    const allAreas = Array.from(new Set(base.map(r => r.area))).sort((a,b)=>a.localeCompare(b))
+    let showAreas: string[] = []
+    if (areaFilter === 'all') showAreas = allAreas
+    else if (areaFilter === 'no-areas') showAreas = []
+    else showAreas = allAreas.filter(a => a === areaFilter)
+
+    // 3) Construir pivote: llave por (category, vendor, item, article_number)
+    const keyOf = (r:Row) => `${r.category}||${r.vendor||''}||${r.item}||${r.article_number||''}`
+
+    const map = new Map<string, PivotRow>()
+    for (const r of base) {
+      const k = keyOf(r)
+      let acc = map.get(k)
+      if (!acc) {
+        acc = {
+          category: r.category,
+          vendor: r.vendor || '',
+          item: r.item,
+          article_number: r.article_number || null,
+          areas: {},
+          total: 0
+        }
+        map.set(k, acc)
+      }
+      acc.areas[r.area] = (acc.areas[r.area] || 0) + (Number(r.qty) || 0)
+      acc.total += (Number(r.qty) || 0)
     }
 
-    // Orden lógico: categoría > item > vendor > item_number > área
-    r = [...r].sort((a,b)=>{
+    // 4) Ordenar por categoría > item > vendor > item_number
+    const pivotRows = Array.from(map.values()).sort((a,b)=>{
       const c = a.category.localeCompare(b.category); if(c!==0) return c
       const i = a.item.localeCompare(b.item); if(i!==0) return i
-      const v = (a.vendor||'').localeCompare(b.vendor||''); if(v!==0) return v
-      const an = (a.article_number||'').localeCompare(b.article_number||''); if(an!==0) return an
-      return a.area.localeCompare(b.area)
+      const v = a.vendor.localeCompare(b.vendor); if(v!==0) return v
+      return (a.article_number||'').localeCompare(b.article_number||'')
     })
 
-    if(areaFilter==='no-areas'){
-      // Agregar por (category, item, vendor, article_number)
-      const agg = new Map<string, Row>()
-      for(const row of r){
-        const key = `${row.category}||${row.item}||${row.vendor||''}||${row.article_number||''}`
-        const prev = agg.get(key)
-        if(prev){
-          prev.qty += row.qty
-        }else{
-          agg.set(key, {
-            area: '',
-            category: row.category,
-            item: row.item,
-            vendor: row.vendor||'',
-            qty: row.qty,
-            unit: null,
-            article_number: row.article_number || null,
-          })
-        }
-      }
-      r = Array.from(agg.values()).sort((a,b)=>{
-        const c = a.category.localeCompare(b.category); if(c!==0) return c
-        const i = a.item.localeCompare(b.item); if(i!==0) return i
-        const v = (a.vendor||'').localeCompare(b.vendor||''); if(v!==0) return v
-        return (a.article_number||'').localeCompare(b.article_number||'')
-      })
+    // 5) Agrupar por categoría
+    const grouped = new Map<string, PivotRow[]>()
+    for (const pr of pivotRows) {
+      if (!grouped.has(pr.category)) grouped.set(pr.category, [])
+      grouped.get(pr.category)!.push(pr)
     }
 
-    return r
-  },[rows, areaFilter, catFilter])
+    // 6) Columnas: Vendor | Item | Item number | [Áreas*] | Total
+    const cols = 3 /*vendor,item,item#*/ + showAreas.length + 1 /*total*/
 
-  // Agrupado por categoría
-  const groupedByCategory = useMemo(()=>{
-    const map = new Map<string, Row[]>()
-    for(const row of visible){
-      if(!map.has(row.category)) map.set(row.category, [])
-      map.get(row.category)!.push(row)
-    }
-    return map
-  },[visible])
-
-  // Columnas: Vendor | Item | Item number | [Area?] | Qty/Total
-  const colCount = areaFilter==='no-areas' ? 4 : 5
+    return { displayedAreas: showAreas, groupedByCategory: grouped, colCount: cols }
+  }, [rows, catFilter, areaFilter])
 
   return (
     <div>
@@ -145,11 +149,11 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
           <select className="select" value={areaFilter} onChange={e=> setAreaFilter(e.target.value)}>
             <option value="all">All areas</option>
             <option value="no-areas">No Areas (Totals)</option>
-            {areas.map(a=> <option key={a} value={a}>{a}</option>)}
+            {areas.sort((a,b)=>a.localeCompare(b)).map(a=> <option key={a} value={a}>{a}</option>)}
           </select>
           <select className="select" value={catFilter} onChange={e=> setCatFilter(e.target.value)}>
             <option value="all">All categories</option>
-            {cats.map(c=> <option key={c} value={c}>{c}</option>)}
+            {cats.sort((a,b)=>a.localeCompare(b)).map(c=> <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
       </div>
@@ -161,13 +165,13 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
               <th>Vendor</th>
               <th>Item</th>
               <th>Item number</th>
-              {areaFilter!=='no-areas' && <th>Area</th>}
-              <th>{areaFilter==='no-areas' ? 'Total' : 'Qty'}</th>
+              {displayedAreas.map(a => <th key={`h-${a}`}>{a}</th>)}
+              <th>Total</th>
             </tr>
           </thead>
           <tbody>
             {Array.from(groupedByCategory.keys()).map(cat=>{
-              const rowsInCat = groupedByCategory.get(cat) || []
+              const itemsInCat = groupedByCategory.get(cat) || []
               return (
                 <React.Fragment key={cat}>
                   {/* Encabezado de categoría */}
@@ -182,14 +186,19 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
                       {cat}
                     </td>
                   </tr>
-                  {/* Filas de items */}
-                  {rowsInCat.map((r,i)=>(
-                    <tr key={`${cat}-${i}`}>
-                      <td>{r.vendor || ''}</td>
-                      <td>{r.item}</td>
-                      <td>{r.article_number || ''}</td>
-                      {areaFilter!=='no-areas' && <td>{r.area}</td>}
-                      <td>{r.qty}</td>
+
+                  {/* Filas de ítems pivotadas por área */}
+                  {itemsInCat.map((pr, idx)=>(
+                    <tr key={`${cat}-${idx}`}>
+                      <td>{pr.vendor}</td>
+                      <td>{pr.item}</td>
+                      <td>{pr.article_number || ''}</td>
+                      {displayedAreas.map(a=>{
+                        const q = pr.areas[a] || 0
+                        // Mostrar vacío si 0 (estilo hoja)
+                        return <td key={`${cat}-${idx}-${a}`}>{q>0 ? q : ''}</td>
+                      })}
+                      <td>{pr.total}</td>
                     </tr>
                   ))}
                 </React.Fragment>
