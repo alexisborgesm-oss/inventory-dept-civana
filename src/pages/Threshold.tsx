@@ -5,7 +5,7 @@ import { Modal } from '../components/Modal'
 type User = { id:string, username:string, role:'super_admin'|'admin'|'standard', department_id:number|null }
 
 type Area = { id:number, name:string, department_id:number|null }
-type Item = { id:number, name:string, is_valuable?: boolean }
+type Item = { id:number, name:string, is_valuable?: boolean, article_number?: string | null }
 type ThresholdRec = { id:number, area_id:number, item_id:number, expected_qty:number }
 
 const Threshold: React.FC<{user:User}> = ({user})=>{
@@ -14,7 +14,7 @@ const Threshold: React.FC<{user:User}> = ({user})=>{
   const [areas, setAreas] = useState<Area[]>([])
   const [activeAreaId, setActiveAreaId] = useState<number| null>(null)
 
-  const [items, setItems] = useState<Item[]>([])              // items asignados al área activa (con is_valuable)
+  const [items, setItems] = useState<Item[]>([])              // items asignados al área activa (con is_valuable y article_number)
   const [existing, setExisting] = useState<Record<number, ThresholdRec>>({}) // por item_id
   const [qtyByItem, setQtyByItem] = useState<Record<number, string>>({})     // inputs
 
@@ -49,10 +49,10 @@ const Threshold: React.FC<{user:User}> = ({user})=>{
       return
     }
 
-    // 2) Items (desde la vista con bandera is_valuable)
+    // 2) Items (desde la vista con bandera is_valuable y article_number)
     const { data: its, error: eItems } = await supabase
       .from('items_with_flags')
-      .select('id,name,is_valuable')
+      .select('id,name,is_valuable,article_number')
       .in('id', ids)
       .order('name', { ascending:true })
     if(eItems){ alert(eItems.message); return }
@@ -175,7 +175,12 @@ const Threshold: React.FC<{user:User}> = ({user})=>{
               )}
               {items.map(it=>(
                 <tr key={it.id}>
-                  <td>{it.name}</td>
+                  <td>
+                    {it.name}
+                    {it.article_number
+                      ? <span style={{marginLeft:8, fontSize:12, opacity:.8}}>· Item #: <strong>{it.article_number}</strong></span>
+                      : null}
+                  </td>
                   <td>
                     <input
                       className="input"
