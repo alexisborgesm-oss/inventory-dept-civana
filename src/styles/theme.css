@@ -74,7 +74,7 @@ body{
 .btn{ padding:.6rem .9rem; border-radius:12px; border:1px solid transparent; cursor:pointer; transition:var(--transition) }
 .btn-primary{ background:var(--green); color:var(--obsidian) }
 .btn-primary:hover{ filter:brightness(0.95); transform:translateY(-1px) }
-.btn-secondary{ background:transparent; color:var(--green); border-color:var(--green) }
+.btn-secondary{ background:transparent; color:#111212; border-color:#819d8a }
 .btn-secondary:hover{ background:rgba(205,232,214,.1) }
 .btn-danger{ background:#e57373; color:white }
 .btn-danger:hover{ filter:brightness(.95) }
