@@ -125,6 +125,10 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
   }
 
   async function saveLinks(){
+    if (linkItem?.is_valuable && checkedAreas.size > 1) {
+  alert('A valioso item can be assigned to only one area.');
+  return;
+}
     if(!linkItem) return
     if(!confirm('Save area assignments for this item?')) return
 
@@ -295,20 +299,29 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
 
         <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px,1fr))', gap:8, marginTop:8}}>
           {linkAreas.map(a=>{
+            const isValioso = !!linkItem?.is_valuable;
             const checked = checkedAreas.has(a.id)
             return (
               <label key={a.id} className="card" style={{display:'flex', alignItems:'center', gap:8}}>
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={(e)=>{
-                    setCheckedAreas(prev=>{
-                      const next = new Set(prev)
-                      if(e.target.checked) next.add(a.id); else next.delete(a.id)
-                      return next
-                    })
-                  }}
-                />
+               <input
+  type="checkbox"
+  checked={checked}
+  disabled={isValioso && !checked && checkedAreas.size >= 1}
+  onChange={(e)=>{
+    const nextChecked = e.target.checked;
+    setCheckedAreas(prev=>{
+      if(isValioso){
+        // Valioso: solo una área a la vez
+        return nextChecked ? new Set([a.id]) : new Set();
+      }else{
+        // Normal: varias áreas
+        const next = new Set(prev);
+        if(nextChecked) next.add(a.id); else next.delete(a.id);
+        return next;
+      }
+    });
+  }}
+/>
                 <span>{a.name} <small style={{opacity:.65}}>#{a.id}</small></span>
               </label>
             )
