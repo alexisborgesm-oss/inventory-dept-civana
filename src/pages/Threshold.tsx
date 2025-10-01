@@ -46,7 +46,10 @@ const Threshold: React.FC<{user:User}> = ({user})=>{
 
     // 2) Items
     const { data: its, error: eItems } = await supabase
-      .from('items').select('id,name').in('id', ids).order('name', { ascending:true })
+  .from('items_with_flags')
+  .select('id,name,is_valuable')
+  .in('id', ids)
+  .order('name', { ascending:true })
     if(eItems){ alert(eItems.message); return }
     setItems(its||[])
 
@@ -78,7 +81,11 @@ const Threshold: React.FC<{user:User}> = ({user})=>{
         const v = qtyByItem[it.id]
         if(v===undefined || v===null || v==='') return null
         const n = Number(v)
-        if(Number.isNaN(n) || n<0) return null
+        if(Number.isNaN(n) || n<0) return null;
+        if (it.is_valuable && n > 1) {
+  alert(`Item "${it.name}" is valioso; expected qty must be 0 or 1.`);
+  throw new Error('valioso qty > 1');
+}
         return { area_id: activeAreaId, item_id: it.id, expected_qty: n }
       })
       .filter(Boolean) as Array<{area_id:number,item_id:number,expected_qty:number}>
@@ -156,16 +163,17 @@ const Threshold: React.FC<{user:User}> = ({user})=>{
                   <td>{it.name}</td>
                   <td>
                     <input
-                      className="input"
-                      style={{maxWidth:140}}
-                      type="number"
-                      min={0}
-                      value={qtyByItem[it.id] ?? ''}
-                      onChange={e=>{
-                        const v = e.target.value
-                        setQtyByItem(prev=>({...prev, [it.id]: v}))
-                      }}
-                    />
+  className="input"
+  style={{maxWidth:140}}
+  type="number"
+  min={0}
+  max={it.is_valuable ? 1 : undefined}
+  value={qtyByItem[it.id] ?? ''}
+  onChange={e=>{
+    const v = e.target.value;
+    setQtyByItem(prev=>({...prev, [it.id]: v}));
+  }}
+/>
                   </td>
                 </tr>
               ))}
