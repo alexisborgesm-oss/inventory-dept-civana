@@ -12,7 +12,7 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
 
   // ---- Modal USUARIOS ----
   const [open,setOpen]=useState(false)
-  const [payload,setPayload]=useState<any>({})
+  const [payload,setPayload]=useState<any>({}) // {id?, username, password?, role, department_id?}
 
   // ---- Modal DEPARTAMENTOS ----
   const [openDep,setOpenDep]=useState(false)
@@ -28,16 +28,39 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
   }
 
   // ======== USUARIOS ========
-  function openModal(initial:any={ id:null, username:'', password:'', role:'standard', department_id:null }){
+  function openModal(initial:any={
+    // ¡OJO! NO incluimos id en el objeto de "nuevo"
+    username:'', password:'', role:'standard', department_id:null
+  }){
     setPayload(initial); setOpen(true)
   }
 
   async function save(){
     if(!confirm('Are you sure?')) return
-    const body = { ...payload, department_id: payload.role==='super_admin' ? null : payload.department_id }
-    const { error } = payload.id
-      ? await supabase.from('users').update(body).eq('id', payload.id)
-      : await supabase.from('users').insert(body)
+
+    const isUpdate = !!payload.id
+
+    // Construimos el cuerpo permitiendo solo columnas válidas
+    const body: any = {
+      username: String(payload.username || '').trim(),
+      role: payload.role || 'standard',
+      department_id: (payload.role === 'super_admin') ? null : (payload.department_id ?? null),
+    }
+    // Solo enviamos password si viene no vacía
+    if (payload.password && String(payload.password).trim() !== '') {
+      body.password = String(payload.password)
+    }
+
+    let error
+    if (isUpdate) {
+      const { error: e } = await supabase.from('users').update(body).eq('id', payload.id)
+      error = e
+    } else {
+      // IMPORTANTE: no enviar id en el insert (así usa el DEFAULT del DB)
+      const { error: e } = await supabase.from('users').insert(body)
+      error = e
+    }
+
     if(error){ alert(error.message); return }
     setOpen(false); refresh()
   }
@@ -73,6 +96,7 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
     refresh()
   }
 
+  // Borrado en cascada prudente (solo borra items/categorías huérfanos)
   async function removeDepartmentCascade(departmentId:number){
     const ok = confirm(
       '⚠️ Esto borrará PERMANENTEMENTE el departamento y TODOS sus datos asociados:\n' +
@@ -82,7 +106,7 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
       '• Records y sus items de esas áreas\n' +
       '• Inventarios mensuales del departamento (y sus items)\n' +
       '• Enlaces Área–Item (area_items)\n' +
-      '• Además, items y categorías quedarán eliminados SOLO si ya no los usa ningún otro departamento\n\n' +
+      '• Además, items y categorías se eliminarán SOLO si quedan huérfanos\n\n' +
       '¿Deseas continuar?'
     )
     if(!ok) return
@@ -93,7 +117,7 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
       if(eAreas) throw eAreas
       const areaIds = (areaRows||[]).map(r=>r.id)
 
-      // 2) Inventarios mensuales (dept-scope)
+      // 2) Inventarios mensuales (dept)
       const { data: mRows, error: eM } = await supabase.from('monthly_inventories').select('id').eq('department_id', departmentId)
       if(eM) throw eM
       const monthlyIds = (mRows||[]).map(r=>r.id)
@@ -116,11 +140,11 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
           if(eDelRec) throw eDelRec
         }
 
-        // 4) Thresholds de esas áreas
+        // 4) Thresholds
         const { error: eT } = await supabase.from('thresholds').delete().in('area_id', areaIds)
         if(eT) throw eT
 
-        // 5) Enlaces área–item de esas áreas
+        // 5) Enlaces área–item
         const { data: areaItemLinks, error: eAILSel } = await supabase.from('area_items').select('item_id').in('area_id', areaIds)
         if(eAILSel) throw eAILSel
         const deptItemIds = Array.from(new Set((areaItemLinks||[]).map(r=>r.item_id)))
@@ -132,7 +156,7 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
         const { error: eAreasDel } = await supabase.from('areas').delete().in('id', areaIds)
         if(eAreasDel) throw eAreasDel
 
-        // 7) Intentar borrar ITEMS huérfanos (sin enlaces en ninguna área)
+        // 7) Intentar borrar ITEMS huérfanos
         if(deptItemIds.length){
           const { data: stillUsed, error: eStill } = await supabase
             .from('area_items')
@@ -146,7 +170,7 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
             if(eDelItems) throw eDelItems
           }
 
-          // 8) Intentar borrar CATEGORÍAS huérfanas (sin items)
+          // 8) Intentar borrar CATEGORÍAS huérfanas
           const { data: catsInUse, error: eCatsInUse } = await supabase.from('items').select('category_id')
           if(eCatsInUse) throw eCatsInUse
           const inUse = new Set((catsInUse||[]).map(r=>r.category_id).filter((x:any)=> x!=null))
@@ -197,7 +221,7 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
                 <td>{u.role}</td>
                 <td>{u.department_id ? (depNameById[u.department_id] ?? u.department_id) : '-'}</td>
                 <td style={{display:'flex',gap:8}}>
-                  <button className="btn btn-secondary" onClick={()=>openModal(u)}>Modify</button>
+                  <button className="btn btn-secondary" onClick={()=>openModal({ ...u, password:'' })}>Modify</button>
                   <button className="btn btn-danger" onClick={()=>removeUser(u.id)}>Delete</button>
                 </td>
               </tr>
