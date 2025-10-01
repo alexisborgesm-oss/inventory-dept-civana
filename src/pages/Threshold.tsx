@@ -84,7 +84,7 @@ const Threshold: React.FC<{user:User}> = ({user})=>{
       .filter(Boolean) as Array<{area_id:number,item_id:number,expected_qty:number}>
 
     try{
-      // Intento 1: UPSERT con conflicto en (area_id,item_id)
+      // UPSERT con conflicto en (area_id,item_id)
       const { error: upErr } = await supabase
         .from('thresholds')
         .upsert(rows, { onConflict: 'area_id,item_id' })
@@ -93,7 +93,8 @@ const Threshold: React.FC<{user:User}> = ({user})=>{
         return
       }
 
-      // Fallback: si tu tabla no tiene índice único (area_id,item_id), hacemos update/insert por fila
+      // Fallback: si tu tabla no tuviera el constraint único,
+      // hacemos update/insert por fila (evita id:null)
       for(const r of rows){
         const existingRec = existing[r.item_id]
         if(existingRec){
