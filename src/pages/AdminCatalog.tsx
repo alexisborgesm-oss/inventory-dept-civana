@@ -2,10 +2,14 @@ import React, { useEffect, useState } from 'react'
 import { supabase } from '../utils/supabase'
 import { Modal } from '../components/Modal'
 
-type User = { id:string, username:string, role:'super_admin'|'admin'|'standard', department_id:number|null }
+type Role = 'super_admin' | 'admin' | 'standard'
+type User = { id:string, username:string, role:Role, department_id:number|null }
 
 const AdminCatalog: React.FC<{user:User}> = ({user})=>{
-  if(user.role!=='super_admin') return <div className="card"><strong>Access denied.</strong></div>
+  // Ahora admins también pueden entrar; los estándar no
+  if(user.role!=='super_admin' && user.role!=='admin'){
+    return <div className="card"><strong>Access denied.</strong></div>
+  }
 
   const [users,setUsers]=useState<any[]>([])
   const [deps,setDeps]=useState<any[]>([])
@@ -14,7 +18,7 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
   const [open,setOpen]=useState(false)
   const [payload,setPayload]=useState<any>({}) // {id?, username, password?, role, department_id?}
 
-  // ---- Modal DEPARTAMENTOS ----
+  // ---- Modal DEPARTAMENTOS ---- (solo super_admin)
   const [openDep,setOpenDep]=useState(false)
   const [depPayload,setDepPayload]=useState<any>({})  // { id?: number, name: string }
 
@@ -27,12 +31,33 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
     setDeps(d||[])
   }
 
-  // ======== USUARIOS ========
-  function openModal(initial:any={
-    // ¡OJO! NO incluimos id en el objeto de "nuevo"
-    username:'', password:'', role:'standard', department_id:null
-  }){
-    setPayload(initial); setOpen(true)
+  // ========= Helpers =========
+  const depNameById: Record<number,string> = Object.fromEntries(deps.map((d:any)=>[d.id,d.name])) as any
+
+  const visibleUsers = user.role==='super_admin'
+    ? users
+    : users.filter(u => u.department_id === user.department_id) // admin ve solo su dpto
+
+  const allowedRolesForEditor: Role[] = (user.role==='super_admin')
+    ? ['standard','admin','super_admin']
+    : ['standard','admin'] // admin no puede tocar super_admin
+
+  // ========= USUARIOS =========
+  function openModal(initial?:any){
+    if(initial){
+      // Editar existente
+      setPayload({ ...initial, password:'' }) // password vacío => no se actualiza
+      setOpen(true)
+      return
+    }
+    // Nuevo
+    if(user.role==='super_admin'){
+      setPayload({ username:'', password:'', role:'standard', department_id:null })
+    }else{
+      // admin: forzamos su mismo department_id
+      setPayload({ username:'', password:'', role:'standard', department_id:user.department_id })
+    }
+    setOpen(true)
   }
 
   async function save(){
@@ -40,15 +65,37 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
 
     const isUpdate = !!payload.id
 
-    // Construimos el cuerpo permitiendo solo columnas válidas
+    // Reglas para admin
+    let nextRole: Role = (payload.role || 'standard') as Role
+    if(user.role==='admin'){
+      // admin no puede crear super_admin
+      if(nextRole === 'super_admin') nextRole = 'standard'
+    }
+
+    // Construir body
     const body: any = {
       username: String(payload.username || '').trim(),
-      role: payload.role || 'standard',
-      department_id: (payload.role === 'super_admin') ? null : (payload.department_id ?? null),
+      role: nextRole,
+      department_id: (nextRole === 'super_admin')
+        ? null
+        : (user.role==='super_admin' ? (payload.department_id ?? null) : user.department_id) // admin: siempre su dpto
     }
-    // Solo enviamos password si viene no vacía
+    // password solo si viene no vacío
     if (payload.password && String(payload.password).trim() !== '') {
       body.password = String(payload.password)
+    }
+
+    // Validaciones de alcance para admin al editar
+    if (isUpdate && user.role==='admin') {
+      const original = users.find(u => u.id === payload.id)
+      if (!original || original.department_id !== user.department_id) {
+        alert('You can only modify users in your department.')
+        return
+      }
+      if (original.role === 'super_admin') {
+        alert('You cannot modify a super_admin.')
+        return
+      }
     }
 
     let error
@@ -56,7 +103,7 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
       const { error: e } = await supabase.from('users').update(body).eq('id', payload.id)
       error = e
     } else {
-      // IMPORTANTE: no enviar id en el insert (así usa el DEFAULT del DB)
+      // IMPORTANTE: no enviar id en insert
       const { error: e } = await supabase.from('users').insert(body)
       error = e
     }
@@ -65,14 +112,29 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
     setOpen(false); refresh()
   }
 
-  async function removeUser(id:string){
-    if(!confirm('Delete user?')) return
-    const { error } = await supabase.from('users').delete().eq('id', id)
+  async function removeUser(targetId:string){
+    const target = users.find(u=>u.id===targetId)
+    if(!target){ alert('User not found'); return }
+
+    // Reglas para admin
+    if(user.role==='admin'){
+      if(target.role==='super_admin'){
+        alert('You cannot delete a super_admin.')
+        return
+      }
+      if(target.department_id !== user.department_id){
+        alert('You can only delete users in your department.')
+        return
+      }
+    }
+    if(!confirm(`Delete user "${target.username}"?`)) return
+
+    const { error } = await supabase.from('users').delete().eq('id', targetId)
     if(error){ alert(error.message); return }
     refresh()
   }
 
-  // ======== DEPARTAMENTOS ========
+  // ========= DEPARTAMENTOS (solo super_admin) =========
   function openDepModal(initial:any={ id:null, name:'' }){
     setDepPayload(initial); setOpenDep(true)
   }
@@ -96,7 +158,7 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
     refresh()
   }
 
-  // Borrado en cascada prudente (solo borra items/categorías huérfanos)
+  // Borrado en cascada prudente (ya implementado antes) — solo super_admin
   async function removeDepartmentCascade(departmentId:number){
     const ok = confirm(
       '⚠️ Esto borrará PERMANENTEMENTE el departamento y TODOS sus datos asociados:\n' +
@@ -199,12 +261,14 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
     }
   }
 
-  // Mapa id->nombre para mostrar en tabla de usuarios
-  const depNameById: Record<number,string> = Object.fromEntries(deps.map((d:any)=>[d.id,d.name])) as any
-
   return (
     <div className="card">
-      <h3 style={{marginTop:0}}>Admin-Catalog (Users & Departments)</h3>
+      <h3 style={{marginTop:0}}>
+        {user.role==='super_admin'
+          ? 'Admin-Catalog (Users & Departments)'
+          : 'User Management (Your Department)'
+        }
+      </h3>
 
       {/* ======= USERS ======= */}
       <section>
@@ -215,13 +279,13 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
             <tr><th>Username</th><th>Role</th><th>Department</th><th>Actions</th></tr>
           </thead>
           <tbody>
-            {users.map(u=>(
+            {visibleUsers.map(u=>(
               <tr key={u.id}>
                 <td>{u.username}</td>
                 <td>{u.role}</td>
                 <td>{u.department_id ? (depNameById[u.department_id] ?? u.department_id) : '-'}</td>
                 <td style={{display:'flex',gap:8}}>
-                  <button className="btn btn-secondary" onClick={()=>openModal({ ...u, password:'' })}>Modify</button>
+                  <button className="btn btn-secondary" onClick={()=>openModal(u)}>Modify</button>
                   <button className="btn btn-danger" onClick={()=>removeUser(u.id)}>Delete</button>
                 </td>
               </tr>
@@ -230,28 +294,30 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
         </table>
       </section>
 
-      {/* ======= DEPARTMENTS ======= */}
-      <section style={{marginTop:12}}>
-        <h4>Departments</h4>
-        <button className="btn btn-primary" onClick={()=>openDepModal()}>New department</button>
-        <table>
-          <thead>
-            <tr><th>ID</th><th>Name</th><th>Actions</th></tr>
-          </thead>
-          <tbody>
-            {deps.map(d=>(
-              <tr key={d.id}>
-                <td>{d.id}</td>
-                <td>{d.name}</td>
-                <td style={{display:'flex',gap:8}}>
-                  <button className="btn btn-secondary" onClick={()=>openDepModal(d)}>Modify</button>
-                  <button className="btn btn-danger" onClick={()=>removeDepartmentCascade(d.id)}>Delete</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+      {/* ======= DEPARTMENTS (solo super_admin) ======= */}
+      {user.role==='super_admin' && (
+        <section style={{marginTop:12}}>
+          <h4>Departments</h4>
+          <button className="btn btn-primary" onClick={()=>openDepModal()}>New department</button>
+          <table>
+            <thead>
+              <tr><th>ID</th><th>Name</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+              {deps.map(d=>(
+                <tr key={d.id}>
+                  <td>{d.id}</td>
+                  <td>{d.name}</td>
+                  <td style={{display:'flex',gap:8}}>
+                    <button className="btn btn-secondary" onClick={()=>openDepModal(d)}>Modify</button>
+                    <button className="btn btn-danger" onClick={()=>removeDepartmentCascade(d.id)}>Delete</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
 
       {/* MODAL USUARIO */}
       <Modal open={open} onClose={()=>setOpen(false)} title="User" footer={<>
@@ -274,42 +340,59 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
             className="select"
             value={payload.role||'standard'}
             onChange={e=>{
-              const role = (e.target.value as any)
+              const role = (e.target.value as Role)
+              // admin nunca puede seleccionar super_admin
+              const safeRole: Role = (user.role==='admin' && role==='super_admin') ? 'standard' : role
               setPayload({
                 ...payload,
-                role,
-                department_id: role==='super_admin' ? null : payload.department_id
+                role: safeRole,
+                department_id: safeRole==='super_admin'
+                  ? null
+                  : (user.role==='super_admin' ? payload.department_id : user.department_id)
               })
             }}
           >
-            <option value="standard">standard</option>
-            <option value="admin">admin</option>
-            <option value="super_admin">super_admin</option>
-          </select>
-        </div>
-        <div className="field">
-          <label>Department</label>
-          <select
-            className="select"
-            disabled={payload.role === 'super_admin'}
-            value={payload.department_id ?? ''} // '' => null
-            onChange={(e)=>{
-              const v = e.target.value
-              setPayload({
-                ...payload,
-                department_id: v === '' ? null : Number(v)
-              })
-            }}
-          >
-            <option value="">No department (super_admin)</option>
-            {deps.map((d:any)=>(
-              <option key={d.id} value={d.id}>{d.name}</option>
+            {allowedRolesForEditor.map(r=>(
+              <option key={r} value={r}>{r}</option>
             ))}
           </select>
         </div>
+
+        {/* Department selector:
+            - super_admin: select editable con todos los departamentos
+            - admin: bloqueado y forzado a su propio departamento */}
+        <div className="field">
+          <label>Department</label>
+          {user.role==='super_admin' ? (
+            <select
+              className="select"
+              disabled={payload.role === 'super_admin'}
+              value={payload.department_id ?? ''} // '' => null
+              onChange={(e)=>{
+                const v = e.target.value
+                setPayload({
+                  ...payload,
+                  department_id: v === '' ? null : Number(v)
+                })
+              }}
+            >
+              <option value="">No department (super_admin)</option>
+              {deps.map((d:any)=>(
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          ) : (
+            <input
+              className="input"
+              value={depNameById[user.department_id as number] || ''}
+              disabled
+              readOnly
+            />
+          )}
+        </div>
       </Modal>
 
-      {/* MODAL DEPARTAMENTO */}
+      {/* MODAL DEPARTAMENTO (solo super_admin) */}
       <Modal open={openDep} onClose={()=>setOpenDep(false)} title="Department" footer={<>
         <button className="btn btn-secondary" onClick={()=>setOpenDep(false)}>Cancel</button>
         <button className="btn btn-primary" onClick={saveDepartment}>Save</button>
