@@ -4,7 +4,7 @@ import { supabase } from '../utils/supabase'
 type User = { id:string, username:string, role:'super_admin'|'admin'|'standard', department_id:number|null }
 
 type Area = { id:number, name:string, department_id:number|null }
-type Item = { id:number, name:string }
+type Item = { id:number, name:string, is_valuable?: boolean }
 type ThresholdRec = { id:number, area_id:number, item_id:number, expected_qty:number }
 
 const Threshold: React.FC<{user:User}> = ({user})=>{
@@ -13,7 +13,7 @@ const Threshold: React.FC<{user:User}> = ({user})=>{
   const [areas, setAreas] = useState<Area[]>([])
   const [activeAreaId, setActiveAreaId] = useState<number| null>(null)
 
-  const [items, setItems] = useState<Item[]>([])              // items asignados al área activa
+  const [items, setItems] = useState<Item[]>([])              // items asignados al área activa (con is_valuable)
   const [existing, setExisting] = useState<Record<number, ThresholdRec>>({}) // por item_id
   const [qtyByItem, setQtyByItem] = useState<Record<number, string>>({})     // inputs
 
@@ -44,14 +44,14 @@ const Threshold: React.FC<{user:User}> = ({user})=>{
       return
     }
 
-    // 2) Items
+    // 2) Items (desde la vista con bandera is_valuable)
     const { data: its, error: eItems } = await supabase
-  .from('items_with_flags')
-  .select('id,name,is_valuable')
-  .in('id', ids)
-  .order('name', { ascending:true })
+      .from('items_with_flags')
+      .select('id,name,is_valuable')
+      .in('id', ids)
+      .order('name', { ascending:true })
     if(eItems){ alert(eItems.message); return }
-    setItems(its||[])
+    setItems((its||[]) as Item[])
 
     // 3) Thresholds existentes del área
     const { data: ths, error: eTh } = await supabase
@@ -81,11 +81,12 @@ const Threshold: React.FC<{user:User}> = ({user})=>{
         const v = qtyByItem[it.id]
         if(v===undefined || v===null || v==='') return null
         const n = Number(v)
-        if(Number.isNaN(n) || n<0) return null;
+        if(Number.isNaN(n) || n<0) return null
+        // UX: si es valioso, solo 0 o 1
         if (it.is_valuable && n > 1) {
-  alert(`Item "${it.name}" is valioso; expected qty must be 0 or 1.`);
-  throw new Error('valioso qty > 1');
-}
+          alert(`Item "${it.name}" is valioso; expected qty must be 0 or 1.`)
+          throw new Error('valioso qty > 1')
+        }
         return { area_id: activeAreaId, item_id: it.id, expected_qty: n }
       })
       .filter(Boolean) as Array<{area_id:number,item_id:number,expected_qty:number}>
@@ -100,8 +101,7 @@ const Threshold: React.FC<{user:User}> = ({user})=>{
         return
       }
 
-      // Fallback: si tu tabla no tuviera el constraint único,
-      // hacemos update/insert por fila (evita id:null)
+      // Fallback: update/insert por fila (si en algún entorno faltara el constraint)
       for(const r of rows){
         const existingRec = existing[r.item_id]
         if(existingRec){
@@ -116,6 +116,7 @@ const Threshold: React.FC<{user:User}> = ({user})=>{
       }
       await loadAreaData(activeAreaId)
     }catch(err:any){
+      if(String(err?.message || err).includes('valioso qty > 1')) return
       alert(err?.message || String(err))
     }
   }
@@ -163,17 +164,17 @@ const Threshold: React.FC<{user:User}> = ({user})=>{
                   <td>{it.name}</td>
                   <td>
                     <input
-  className="input"
-  style={{maxWidth:140}}
-  type="number"
-  min={0}
-  max={it.is_valuable ? 1 : undefined}
-  value={qtyByItem[it.id] ?? ''}
-  onChange={e=>{
-    const v = e.target.value;
-    setQtyByItem(prev=>({...prev, [it.id]: v}));
-  }}
-/>
+                      className="input"
+                      style={{maxWidth:140}}
+                      type="number"
+                      min={0}
+                      max={it.is_valuable ? 1 : undefined}
+                      value={qtyByItem[it.id] ?? ''}
+                      onChange={e=>{
+                        const v = e.target.value
+                        setQtyByItem(prev=>({...prev, [it.id]: v}))
+                      }}
+                    />
                   </td>
                 </tr>
               ))}
