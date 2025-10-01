@@ -6,7 +6,7 @@ type Role = 'super_admin' | 'admin' | 'standard'
 type User = { id:string, username:string, role:Role, department_id:number|null }
 
 const AdminCatalog: React.FC<{user:User}> = ({user})=>{
-  // Ahora admins también pueden entrar; los estándar no
+  // super_admin y admin pueden entrar; standard no.
   if(user.role!=='super_admin' && user.role!=='admin'){
     return <div className="card"><strong>Access denied.</strong></div>
   }
@@ -18,7 +18,7 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
   const [open,setOpen]=useState(false)
   const [payload,setPayload]=useState<any>({}) // {id?, username, password?, role, department_id?}
 
-  // ---- Modal DEPARTAMENTOS ---- (solo super_admin)
+  // ---- Modal DEPARTAMENTOS (solo super_admin) ----
   const [openDep,setOpenDep]=useState(false)
   const [depPayload,setDepPayload]=useState<any>({})  // { id?: number, name: string }
 
@@ -34,13 +34,14 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
   // ========= Helpers =========
   const depNameById: Record<number,string> = Object.fromEntries(deps.map((d:any)=>[d.id,d.name])) as any
 
+  // admin solo ve/gestiona usuarios de su dpto
   const visibleUsers = user.role==='super_admin'
     ? users
-    : users.filter(u => u.department_id === user.department_id) // admin ve solo su dpto
+    : users.filter(u => u.department_id === user.department_id)
 
   const allowedRolesForEditor: Role[] = (user.role==='super_admin')
     ? ['standard','admin','super_admin']
-    : ['standard','admin'] // admin no puede tocar super_admin
+    : ['standard','admin'] // admin no puede super_admin
 
   // ========= USUARIOS =========
   function openModal(initial?:any){
@@ -67,9 +68,8 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
 
     // Reglas para admin
     let nextRole: Role = (payload.role || 'standard') as Role
-    if(user.role==='admin'){
-      // admin no puede crear super_admin
-      if(nextRole === 'super_admin') nextRole = 'standard'
+    if(user.role==='admin' && nextRole==='super_admin'){
+      nextRole = 'standard'
     }
 
     // Construir body
@@ -80,12 +80,11 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
         ? null
         : (user.role==='super_admin' ? (payload.department_id ?? null) : user.department_id) // admin: siempre su dpto
     }
-    // password solo si viene no vacío
     if (payload.password && String(payload.password).trim() !== '') {
       body.password = String(payload.password)
     }
 
-    // Validaciones de alcance para admin al editar
+    // Validaciones extra de alcance (admin editando)
     if (isUpdate && user.role==='admin') {
       const original = users.find(u => u.id === payload.id)
       if (!original || original.department_id !== user.department_id) {
@@ -158,7 +157,7 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
     refresh()
   }
 
-  // Borrado en cascada prudente (ya implementado antes) — solo super_admin
+  // Borrado en cascada prudente (solo super_admin)
   async function removeDepartmentCascade(departmentId:number){
     const ok = confirm(
       '⚠️ Esto borrará PERMANENTEMENTE el departamento y TODOS sus datos asociados:\n' +
@@ -174,12 +173,10 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
     if(!ok) return
 
     try{
-      // 1) Áreas del departamento
       const { data: areaRows, error: eAreas } = await supabase.from('areas').select('id').eq('department_id', departmentId)
       if(eAreas) throw eAreas
       const areaIds = (areaRows||[]).map(r=>r.id)
 
-      // 2) Inventarios mensuales (dept)
       const { data: mRows, error: eM } = await supabase.from('monthly_inventories').select('id').eq('department_id', departmentId)
       if(eM) throw eM
       const monthlyIds = (mRows||[]).map(r=>r.id)
@@ -190,7 +187,6 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
         if(eDelM) throw eDelM
       }
 
-      // 3) Records de las áreas del departamento
       if(areaIds.length){
         const { data: rRows, error: eR } = await supabase.from('records').select('id').in('area_id', areaIds)
         if(eR) throw eR
@@ -202,11 +198,9 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
           if(eDelRec) throw eDelRec
         }
 
-        // 4) Thresholds
         const { error: eT } = await supabase.from('thresholds').delete().in('area_id', areaIds)
         if(eT) throw eT
 
-        // 5) Enlaces área–item
         const { data: areaItemLinks, error: eAILSel } = await supabase.from('area_items').select('item_id').in('area_id', areaIds)
         if(eAILSel) throw eAILSel
         const deptItemIds = Array.from(new Set((areaItemLinks||[]).map(r=>r.item_id)))
@@ -214,11 +208,9 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
         const { error: eAIL } = await supabase.from('area_items').delete().in('area_id', areaIds)
         if(eAIL) throw eAIL
 
-        // 6) Borrar ÁREAS
         const { error: eAreasDel } = await supabase.from('areas').delete().in('id', areaIds)
         if(eAreasDel) throw eAreasDel
 
-        // 7) Intentar borrar ITEMS huérfanos
         if(deptItemIds.length){
           const { data: stillUsed, error: eStill } = await supabase
             .from('area_items')
@@ -232,7 +224,6 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
             if(eDelItems) throw eDelItems
           }
 
-          // 8) Intentar borrar CATEGORÍAS huérfanas
           const { data: catsInUse, error: eCatsInUse } = await supabase.from('items').select('category_id')
           if(eCatsInUse) throw eCatsInUse
           const inUse = new Set((catsInUse||[]).map(r=>r.category_id).filter((x:any)=> x!=null))
@@ -246,11 +237,9 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
         }
       }
 
-      // 9) Usuarios del departamento
       const { error: eUsers } = await supabase.from('users').delete().eq('department_id', departmentId)
       if(eUsers) throw eUsers
 
-      // 10) Finalmente, el DEPARTAMENTO
       const { error: eDept } = await supabase.from('departments').delete().eq('id', departmentId)
       if(eDept) throw eDept
 
@@ -341,7 +330,6 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
             value={payload.role||'standard'}
             onChange={e=>{
               const role = (e.target.value as Role)
-              // admin nunca puede seleccionar super_admin
               const safeRole: Role = (user.role==='admin' && role==='super_admin') ? 'standard' : role
               setPayload({
                 ...payload,
@@ -359,7 +347,7 @@ const AdminCatalog: React.FC<{user:User}> = ({user})=>{
         </div>
 
         {/* Department selector:
-            - super_admin: select editable con todos los departamentos
+            - super_admin: select editable
             - admin: bloqueado y forzado a su propio departamento */}
         <div className="field">
           <label>Department</label>
