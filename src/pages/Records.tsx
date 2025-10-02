@@ -1,37 +1,37 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { supabase } from '../utils/supabase'
-import { Modal } from '../components/Modal'
-import { exportToExcel } from '../utils/table'
+import { fmtDateOnly, fmtTimestamp } from '../utils/dateOnly'
 
 type User = { id:string, username:string, role:'super_admin'|'admin'|'standard', department_id:number|null }
-type Row = { id:number, area:string, inventory_date:string, created_at:string, user:string }
+type Rec = { id:number, area_id:number, user_id:string, inventory_date:string, created_at:string }
 
-const Records: React.FC<{user:User}> = ({user}) => {
-  const [rows, setRows] = useState<Row[]>([])
-  const [open, setOpen] = useState(false)
-  const [detail, setDetail] = useState<any[]>([])
-  const [selected, setSelected] = useState<Row | null>(null)
+const Records: React.FC<{user:User}> = ({ user })=>{
+  const [rows, setRows] = useState<Rec[]>([])
+  const [areas, setAreas] = useState<Record<number,string>>({})
+  const [users, setUsers] = useState<Record<string,string>>({})
 
-  useEffect(()=>{
-    supabase.rpc('records_list', { p_user_id: user.id, p_role: user.role, p_department_id: user.department_id })
-    .then(({data,error})=>{
-      if(error){ alert(error.message); return }
-      setRows(data||[])
-    })
-  },[user.id, user.role, user.department_id])
+  useEffect(()=>{ (async ()=>{
+    const [{ data: r }, { data: a }, { data: u }] = await Promise.all([
+      supabase.from('records').select('id,area_id,user_id,inventory_date,created_at').order('created_at', { ascending:false }),
+      supabase.from('areas').select('id,name'),
+      supabase.from('users').select('id,username')
+    ])
+    setRows(r || [])
+    setAreas(Object.fromEntries((a||[]).map((x:any)=>[x.id, x.name])))
+    setUsers(Object.fromEntries((u||[]).map((x:any)=>[x.id, x.username])))
+  })() },[])
 
-  async function openDetails(r:Row){
-    const { data, error } = await supabase.rpc('record_details', { p_record_id: r.id })
+  async function remove(id:number){
+    if(!confirm('Delete this record?')) return
+    const { error } = await supabase.from('records').delete().eq('id', id)
     if(error){ alert(error.message); return }
-    setDetail(data||[]); setSelected(r); setOpen(true)
+    setRows(prev=> prev.filter(r=> r.id!==id))
   }
 
-  async function removeRecord(id:number){
-    if(!(user.role==='admin' || user.role==='super_admin')) return
-    if(!confirm('Are you sure to delete this record?')) return
-    const { error } = await supabase.rpc('delete_record', { p_record_id: id })
-    if(error){ alert(error.message); return }
-    setRows(prev=> prev.filter(r=>r.id!==id))
+  function details(id:number){
+    // Si ya tienes una vista/modal de detalles, llama a la tuya aquí:
+    // navigate(`/records/${id}`) ó abre tu Modal existente.
+    alert(`Open details for record #${id}`)
   }
 
   return (
@@ -39,34 +39,36 @@ const Records: React.FC<{user:User}> = ({user}) => {
       <h3 style={{marginTop:0}}>Records</h3>
       <table>
         <thead>
-          <tr><th>Area</th><th>Inventory date</th><th>Saved at</th><th>User</th><th>Actions</th></tr>
+          <tr>
+            <th>Area</th>
+            <th>Inventory date</th>
+            <th>Saved at</th>
+            <th>User</th>
+            <th>Actions</th>
+          </tr>
         </thead>
         <tbody>
           {rows.map(r=>(
             <tr key={r.id}>
-              <td>{r.area}</td>
-              <td>{new Date(r.inventory_date).toLocaleDateString()}</td>
-              <td>{new Date(r.created_at).toLocaleString()}</td>
-              <td>{r.user}</td>
+              <td>{areas[r.area_id] || `#${r.area_id}`}</td>
+              {/* 👇 PINTA EL DATE SIN DESFASE */}
+              <td>{fmtDateOnly(r.inventory_date)}</td>
+              {/* Puedes usar local o UTC (elige uno y deja fijo) */}
+              <td>{fmtTimestamp(r.created_at /*, { utc: true }*/)}</td>
+              <td>{users[r.user_id] || r.user_id}</td>
               <td style={{display:'flex', gap:8}}>
-                <button className="btn btn-secondary" onClick={()=>openDetails(r)}>Details</button>
-                {(user.role==='admin'||user.role==='super_admin') && <button className="btn btn-danger" onClick={()=>removeRecord(r.id)}>Delete</button>}
+                <button className="btn btn-secondary" onClick={()=>details(r.id)}>Details</button>
+                <button className="btn btn-danger" onClick={()=>remove(r.id)}>Delete</button>
               </td>
             </tr>
           ))}
+          {rows.length===0 && (
+            <tr><td colSpan={5} style={{opacity:.7, padding:'12px 4px'}}>No records</td></tr>
+          )}
         </tbody>
       </table>
-
-      <Modal open={open} onClose={()=>setOpen(false)} title={selected ? `Record #${selected.id} – ${selected.area}` : 'Record'} footer={<>
-        <button className="btn btn-secondary" onClick={()=>setOpen(false)}>Close</button>
-        {detail.length>0 && <button className="btn btn-primary" onClick={()=> exportToExcel(`record-${selected?.id}.xlsx`, detail)}>Export to Excel</button>}
-      </>}>
-        <table>
-          <thead><tr><th>Category</th><th>Item</th><th>Qty</th></tr></thead>
-          <tbody>{detail.map((d,i)=>(<tr key={i}><td>{d.category}</td><td>{d.item}</td><td>{d.qty}</td></tr>))}</tbody>
-        </table>
-      </Modal>
     </div>
   )
 }
+
 export default Records
