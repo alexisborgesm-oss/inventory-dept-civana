@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from '../utils/supabase'
 import { fmtDateOnly, fmtTimestamp } from '../utils/dateOnly'
+import { Modal } from '../components/Modal'
 
 type User = { id:string, username:string, role:'super_admin'|'admin'|'standard', department_id:number|null }
 type Rec = { id:number, area_id:number, user_id:string, inventory_date:string, created_at:string }
@@ -9,6 +10,16 @@ const Records: React.FC<{user:User}> = ({ user })=>{
   const [rows, setRows] = useState<Rec[]>([])
   const [areas, setAreas] = useState<Record<number,string>>({})
   const [users, setUsers] = useState<Record<string,string>>({})
+
+  // ---- estado del modal de detalles ----
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailHeader, setDetailHeader] = useState<{
+    area: string, inventory_date: string, created_at: string, user: string
+  } | null>(null)
+  const [detailItems, setDetailItems] = useState<Array<{
+    category: string, item: string, unit?: string|null, vendor?: string|null, qty: number
+  }>>([])
 
   useEffect(()=>{ (async ()=>{
     const [{ data: r }, { data: a }, { data: u }] = await Promise.all([
@@ -28,10 +39,80 @@ const Records: React.FC<{user:User}> = ({ user })=>{
     setRows(prev=> prev.filter(r=> r.id!==id))
   }
 
-  function details(id:number){
-    // Si ya tienes una vista/modal de detalles, llama a la tuya aquí:
-    // navigate(`/records/${id}`) ó abre tu Modal existente.
-    alert(`Open details for record #${id}`)
+  async function details(id:number){
+    // Header del modal con info que ya tenemos en memoria
+    const rec = rows.find(r=> r.id===id)
+    if(!rec){
+      alert('Record not found')
+      return
+    }
+    setDetailHeader({
+      area: areas[rec.area_id] || `#${rec.area_id}`,
+      inventory_date: fmtDateOnly(rec.inventory_date),
+      created_at: fmtTimestamp(rec.created_at),
+      user: users[rec.user_id] || rec.user_id
+    })
+    setDetailItems([])
+    setDetailLoading(true)
+    setDetailOpen(true)
+
+    try{
+      // 1) record_items del record
+      const { data: ris, error: e1 } = await supabase
+        .from('record_items')
+        .select('item_id, qty')
+        .eq('record_id', id)
+      if(e1) throw e1
+
+      const itemIds = (ris||[]).map(r=> r.item_id)
+      if(itemIds.length===0){
+        setDetailItems([])
+        setDetailLoading(false)
+        return
+      }
+
+      // 2) datos de items (desde la vista que ya usas)
+      const { data: items, error: e2 } = await supabase
+        .from('items_with_flags')
+        .select('id,name,unit,vendor,category_id')
+        .in('id', itemIds)
+      if(e2) throw e2
+
+      // 3) nombres de categorías sólo para las usadas
+      const usedCatIds = Array.from(new Set((items||[]).map((it:any)=> it.category_id)))
+      let catNameById: Record<number,string> = {}
+      if(usedCatIds.length){
+        const { data: cats } = await supabase
+          .from('categories')
+          .select('id,name')
+          .in('id', usedCatIds)
+        catNameById = Object.fromEntries((cats||[]).map((c:any)=> [c.id, c.name]))
+      }
+
+      // 4) armar filas detalle
+      const qtyByItemId = new Map<number, number>()
+      for(const r of (ris||[])) qtyByItemId.set(r.item_id, Number(r.qty)||0)
+
+      const rowsDetail = (items||[])
+        .map((it:any)=> ({
+          category: catNameById[it.category_id] || '',
+          item: it.name as string,
+          unit: it.unit ?? '',
+          vendor: it.vendor ?? '',
+          qty: qtyByItemId.get(it.id) ?? 0
+        }))
+        .sort((a,b)=>{
+          const c = a.category.localeCompare(b.category); if(c!==0) return c
+          const i = a.item.localeCompare(b.item); if(i!==0) return i
+          return (a.vendor||'').localeCompare(b.vendor||'')
+        })
+
+      setDetailItems(rowsDetail)
+    }catch(err:any){
+      alert(err?.message || String(err))
+    }finally{
+      setDetailLoading(false)
+    }
   }
 
   return (
@@ -51,9 +132,7 @@ const Records: React.FC<{user:User}> = ({ user })=>{
           {rows.map(r=>(
             <tr key={r.id}>
               <td>{areas[r.area_id] || `#${r.area_id}`}</td>
-              {/* 👇 PINTA EL DATE SIN DESFASE */}
               <td>{fmtDateOnly(r.inventory_date)}</td>
-              {/* Puedes usar local o UTC (elige uno y deja fijo) */}
               <td>{fmtTimestamp(r.created_at /*, { utc: true }*/)}</td>
               <td>{users[r.user_id] || r.user_id}</td>
               <td style={{display:'flex', gap:8}}>
@@ -67,6 +146,58 @@ const Records: React.FC<{user:User}> = ({ user })=>{
           )}
         </tbody>
       </table>
+
+      {/* ---- Modal de detalles ---- */}
+      <Modal
+        open={detailOpen}
+        onClose={()=>setDetailOpen(false)}
+        title="Record details"
+        footer={<button className="btn btn-primary" onClick={()=>setDetailOpen(false)}>Close</button>}
+      >
+        {!detailHeader ? (
+          <div style={{opacity:.75}}>No record selected.</div>
+        ) : (
+          <>
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:12}}>
+              <div><strong>Area:</strong> {detailHeader.area}</div>
+              <div><strong>User:</strong> {detailHeader.user}</div>
+              <div><strong>Inventory date:</strong> {detailHeader.inventory_date}</div>
+              <div><strong>Saved at:</strong> {detailHeader.created_at}</div>
+            </div>
+
+            <div className="card" style={{boxShadow:'none', padding:0}}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Category</th>
+                    <th>Item</th>
+                    <th>Unit</th>
+                    <th>Vendor</th>
+                    <th>Qty</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detailLoading && (
+                    <tr><td colSpan={5} style={{opacity:.7, padding:'12px 4px'}}>Loading…</td></tr>
+                  )}
+                  {!detailLoading && detailItems.length===0 && (
+                    <tr><td colSpan={5} style={{opacity:.7, padding:'12px 4px'}}>No items in this record.</td></tr>
+                  )}
+                  {!detailLoading && detailItems.map((it,idx)=>(
+                    <tr key={idx}>
+                      <td>{it.category}</td>
+                      <td>{it.item}</td>
+                      <td>{it.unit || ''}</td>
+                      <td>{it.vendor || ''}</td>
+                      <td>{it.qty}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </Modal>
     </div>
   )
 }
