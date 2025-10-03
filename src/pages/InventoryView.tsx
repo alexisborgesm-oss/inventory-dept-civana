@@ -197,9 +197,7 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
   }
 
   // ========================== TABLA COMPARATIVA ==========================
-  // Construimos qty por clave y área partiendo de rows (filtradas por categoría actual)
   const compareData = useMemo(()=>{
-    // 1) qty por (category,vendor,item,article)#area
     const qtyByKeyArea = new Map<string, Record<string, number>>()
     const keyInfo = new Map<string, {category:string,vendor:string,item:string,article_number:string|null}>()
 
@@ -215,7 +213,6 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
       if(!keyInfo.has(k)) keyInfo.set(k, {category:r.category, vendor:r.vendor||'', item:r.item, article_number:r.article_number||null})
     }
 
-    // 2) thresholds por clave y área (usando ids → nombres)
     const thByKeyArea = new Map<string, Record<string, number>>()
     for(const th of thRaw){
       const areaName = areaNameById[th.area_id]
@@ -229,10 +226,8 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
       if(!keyInfo.has(k)) keyInfo.set(k, {category:categoryName, vendor:item.vendor||'', item:item.name, article_number:item.article_number||null})
     }
 
-    // 3) union de claves
     const allKeys = Array.from(new Set([...Array.from(qtyByKeyArea.keys()), ...Array.from(thByKeyArea.keys())]))
 
-    // 4) armar filas
     type CompRow = {
       category: string
       vendor: string
@@ -243,11 +238,10 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
     const compRows: CompRow[] = []
 
     for(const k of allKeys){
-      const info = keyInfo.get(k)! // debe existir
+      const info = keyInfo.get(k)!
       const row: CompRow = { category: info.category, vendor: info.vendor, item: info.item, article_number: info.article_number, byArea: {} }
       const qtyMap = qtyByKeyArea.get(k) || {}
       const thMap  = thByKeyArea.get(k)  || {}
-      // Solo rellenamos las áreas seleccionadas en el multiselect (compareAreas)
       for(const a of Array.from(compareAreas)){
         row.byArea[a] = {
           qty: qtyMap[a] || 0,
@@ -257,7 +251,6 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
       compRows.push(row)
     }
 
-    // 5) ordenar y agrupar por categoría
     compRows.sort((a,b)=>{
       const c = a.category.localeCompare(b.category); if(c!==0) return c
       const i = a.item.localeCompare(b.item); if(i!==0) return i
@@ -274,14 +267,12 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
     return { grouped }
   }, [rows, thRaw, areaNameById, itemInfoById, catNameById, catFilter, compareAreas])
 
-  // colores suaves para qty vs th
   const qtyBg = (qty:number, th:number)=>{
-    if(qty < th) return '#fde8e8'   // rojo pastel
-    if(qty === th) return '#e6f4ea' // verde pastel
-    return '#fff4e5'                // naranja pastel
+    if(qty < th) return '#fde8e8'
+    if(qty === th) return '#e6f4ea'
+    return '#fff4e5'
   }
 
-  // cerrar dropdown si se hace click fuera
   useEffect(()=>{
     function onDocClick(e:MouseEvent){
       if(!areasDropdownOpen) return
@@ -293,12 +284,66 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
     return ()=> document.removeEventListener('mousedown', onDocClick)
   },[areasDropdownOpen])
 
+  /* ========= Exportar a Excel (tabla principal tal cual se ve) ========= */
+  function exportMainTable(){
+    // helper para escapar HTML
+    const esc = (s:any) =>
+      String(s ?? '')
+        .replace(/&/g,'&amp;')
+        .replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;')
+
+    let html = ''
+    html += `<table border="1" style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;font-size:12px;">`
+    // header
+    html += '<thead><tr>'
+    html += '<th>Vendor</th><th>Item</th><th>Item number</th>'
+    for(const a of displayedAreas){ html += `<th>${esc(a)}</th>` }
+    html += '<th>Total</th></tr></thead>'
+
+    // body (mismo orden que en la UI)
+    html += '<tbody>'
+    const catsInOrder = Array.from(groupedByCategory.keys())
+    if(catsInOrder.length===0){
+      html += `<tr><td colspan="${colCount}">No data</td></tr>`
+    }else{
+      for(const cat of catsInOrder){
+        html += `<tr><td colspan="${colCount}" style="background:#e9f0fb;font-weight:bold">${esc(cat)}</td></tr>`
+        const itemsInCat = groupedByCategory.get(cat) || []
+        itemsInCat.forEach(pr=>{
+          html += '<tr>'
+          html += `<td>${esc(pr.vendor)}</td>`
+          html += `<td>${esc(pr.item)}</td>`
+          html += `<td>${esc(pr.article_number || '')}</td>`
+          for(const a of displayedAreas){
+            html += `<td>${esc(pr.areas[a] || 0)}</td>`
+          }
+          html += `<td>${esc(sumDisplayedAreas(pr))}</td>`
+          html += '</tr>'
+        })
+      }
+    }
+    html += '</tbody></table>'
+
+    const doc = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>${html}</body></html>`
+    const blob = new Blob([doc], { type: 'application/vnd.ms-excel;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `Inventory_${new Date().toISOString().slice(0,10)}.xls`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div>
       {/* ==================== TABLA INVENTORY PRINCIPAL ==================== */}
       <div className="card">
         <h3 style={{marginTop:0}}>Inventory</h3>
-        <div style={{display:'flex', gap:12, flexWrap:'wrap'}}>
+        <div style={{display:'flex', gap:12, flexWrap:'wrap', alignItems:'center'}}>
           {user.role==='super_admin' && (
             <select className="select" value={deptId} onChange={e=> setDeptId(e.target.value?Number(e.target.value):'')}>
               <option value="">Select department</option>
@@ -314,6 +359,11 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
             <option value="all">All categories</option>
             {cats.map(c=> <option key={c} value={c}>{c}</option>)}
           </select>
+
+          {/* Botón a la derecha */}
+          <div style={{marginLeft:'auto'}}>
+            <button className="btn btn-secondary" onClick={exportMainTable}>Export to Excel</button>
+          </div>
         </div>
       </div>
 
@@ -413,7 +463,6 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
         <div style={{overflowX:'auto'}}>
           <table style={{width:'100%', borderCollapse:'separate'}}>
             <thead>
-              {/* Fila 1: encabezado principal (sticky) */}
               <tr>
                 <th style={{position:'sticky', top:0, background:'white', zIndex:2}}>Vendor</th>
                 <th style={{position:'sticky', top:0, background:'white', zIndex:2}}>Item</th>
@@ -422,7 +471,6 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
                   <th key={`c1-${a}`} colSpan={2} style={{position:'sticky', top:0, background:'white', zIndex:2, textAlign:'center'}}>{a}</th>
                 ))}
               </tr>
-              {/* Fila 2: sub-encabezados Qty | Threshold (sticky) */}
               <tr>
                 <th style={{position:'sticky', top:28, background:'white', zIndex:2}}></th>
                 <th style={{position:'sticky', top:28, background:'white', zIndex:2}}></th>
