@@ -277,50 +277,72 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
           </tr>
         </thead>
         <tbody>
-          {rows.length === 0 ? (
-            <tr>
-              <td colSpan={7} className="text-center p-3">
-                {loading ? "Cargando..." : "No hay datos para mostrar."}
+  {rows.length === 0 ? (
+    <tr>
+      <td colSpan={7} className="text-center p-3">
+        {loading ? "Cargando..." : "No hay datos para mostrar."}
+      </td>
+    </tr>
+  ) : (
+    (() => {
+      const groupedRows = [];
+      let lastCategory = "";
+
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+
+        // Si cambia la categoría, insertamos una fila de cabecera de categoría
+        if (r.category_name !== lastCategory) {
+          lastCategory = r.category_name;
+          groupedRows.push(
+            <tr
+              key={`cat-${r.category_id}-${i}`}
+              className="bg-green-100 font-semibold"
+            >
+              <td colSpan={7} className="border p-2">
+                {r.category_name}
               </td>
             </tr>
-          ) : (
-            rows.map((r, i) => (
-              <tr key={i} className={getColor(r.diff, r.qty_current_total)}>
-                <td className="border p-2">
-                  <div className="font-semibold">{r.category_name}</div>
-                  <div className="pl-4">{r.item_name}</div>
-                </td>
-                <td className="border p-2 text-center">{r.item_number || "—"}</td>
-                <td className="border p-2 text-center">{r.qty_current_total}</td>
-                <td className="border p-2 text-center">{r.qty_prev_total}</td>
-                <td className="border p-2 text-center">{r.diff}</td>
-                <td className="border p-2 text-center">
-                  {r.diff === 0 ? "—" : r.diff}
-                </td>
-                <td className="border p-2 text-center">
-                  {r.diff === 0 ? (
-                    "—"
-                  ) : (
-                    <input
-                      type="text"
-                      value={r.notes}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setRows((prev) =>
-                          prev.map((x, idx) =>
-                            idx === i ? { ...x, notes: val } : x
-                          )
-                        );
-                      }}
-                      className="border p-1 w-40 rounded"
-                      placeholder="Required (diff ≠ 0)"
-                    />
-                  )}
-                </td>
-              </tr>
-            ))
-          )}
-        </tbody>
+          );
+        }
+
+        groupedRows.push(
+          <tr key={i} className={getColor(r.diff, r.qty_current_total)}>
+            <td className="border p-2 pl-6">{r.item_name}</td>
+            <td className="border p-2 text-center">{r.item_number || "—"}</td>
+            <td className="border p-2 text-center">{r.qty_current_total}</td>
+            <td className="border p-2 text-center">{r.qty_prev_total}</td>
+            <td className="border p-2 text-center">{r.diff}</td>
+            <td className="border p-2 text-center">
+              {r.diff === 0 ? "—" : r.diff}
+            </td>
+            <td className="border p-2 text-center">
+              {r.diff === 0 ? (
+                "—"
+              ) : (
+                <input
+                  type="text"
+                  value={r.notes}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setRows((prev) =>
+                      prev.map((x, idx) => (idx === i ? { ...x, notes: val } : x))
+                    );
+                  }}
+                  className="border p-1 w-40 rounded"
+                  placeholder="Required (diff ≠ 0)"
+                />
+              )}
+            </td>
+          </tr>
+        );
+      }
+
+      return groupedRows;
+    })()
+  )}
+</tbody>
+
       </table>
 
       <button
