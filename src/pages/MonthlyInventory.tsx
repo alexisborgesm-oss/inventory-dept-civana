@@ -1,95 +1,552 @@
-import React, { useEffect, useMemo, useState } from 'react'
-import { supabase } from '../utils/supabase'
-import { exportToExcel } from '../utils/table'
+import React, { useEffect, useMemo, useState } from 'react';
+import dayjs from 'dayjs';
+import { supabase } from '@/utils/supabase'; // ajusta si tu ruta difiere
 
-type User = { id:string, username:string, role:'super_admin'|'admin'|'standard', department_id:number|null }
-type Dept = { id:number, name:string }
-type Row = { area:string, category:string, item:string, qty:number }
+/* =======================
+   Tipos base
+======================= */
+type UserRole = 'super_admin' | 'admin' | 'standard';
+type User = { id: string; role: UserRole; department_id: number | null };
 
-const MonthlyInventory: React.FC<{user:User}> = ({user})=>{
-  const [deptId, setDeptId] = useState<number | ''>(user.role==='super_admin' ? '' : (user.department_id || ''))
-  const [deps,setDeps]=useState<Dept[]>([])
-  const [month,setMonth]=useState<number>(new Date().getMonth()+1)
-  const [year,setYear]=useState<number>(new Date().getFullYear())
-  const [rows,setRows]=useState<Row[]>([])
-  const [pastOpen,setPastOpen]=useState(false)
-  const [past,setPast]=useState<Row[]>([])
+type Department = { id: number; name: string };
+type Category = { id: number; name: string };
+type Item = { id: number; name: string; item_number?: string | null; article_number?: string | null; category_id: number };
 
-  useEffect(()=>{
-    if(user.role==='super_admin'){
-      supabase.from('departments').select('*').then(({data})=> setDeps(data||[]))
+type AnyRow = Record<string, any>;
+
+type MonthlyRow = {
+  category_id: number;
+  category_name: string;
+  item_id: number;
+  item_name: string;
+  item_number?: string | null;
+  qty_current_total: number;
+  qty_prev_total: number;
+  diff: number;
+  notes: string;
+};
+
+const MONTH_LABEL = (m: number) =>
+  dayjs(`2025-${String(m).padStart(2, '0')}-01`).format('MMM').toUpperCase();
+
+/* =======================
+   Config rápida (aquí ajustas nombres si difieren)
+======================= */
+const TABLE_DEPTS = 'departments';
+const TABLE_CATS  = 'categories';
+const TABLE_ITEMS = 'items';
+const TABLE_MI    = 'monthly_inventories';
+
+// Preferencia: primero intenta la vista, si falla usa la tabla base
+const AREA_ITEMS_SOURCES = [
+  { table: 'area_items_view', qtyCandidates: ['qty_current','qty','quantity'] },
+  { table: 'area_items',      qtyCandidates: ['qty_current','qty','quantity'] },
+];
+
+// Campos esperados en area_items/_view (ajusta solo aquí si difiere)
+const AREA_ITEMS_FIELDS = {
+  dept: 'department_id',
+  area: 'area_id',
+  item: 'item_id',
+  cat:  'category_id',
+  item_number: ['item_number', 'article_number'] // toma el primero que exista
+};
+
+/* =======================
+   Componente
+======================= */
+const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
+  // filtros
+  const [departmentId, setDepartmentId] = useState<number | ''>(
+    user.role === 'super_admin' ? '' : (user.department_id ?? '')
+  );
+  const [month, setMonth] = useState<number>(dayjs().month() + 1);
+  const [year, setYear] = useState<number>(dayjs().year());
+
+  // catálogos
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [items, setItems] = useState<Item[]>([]);
+
+  // datos
+  const [loading, setLoading] = useState(false);
+  const [rows, setRows] = useState<MonthlyRow[]>([]);
+  const [showPast, setShowPast] = useState(false);
+  const [pastCount, setPastCount] = useState(3); // 1..11
+  const [pastTable, setPastTable] = useState<
+    { category_id: number; category_name: string; item_id: number; item_name: string; item_number?: string | null;
+      current_qty: number; history: { label: string; qty: number }[]; grouped_notes: string }[]
+  >([]);
+
+  const allNotesOk = useMemo(
+    () => rows.every(r => (r.diff === 0 ? true : r.notes.trim().length > 0)),
+    [rows]
+  );
+
+  useEffect(() => {
+    (async () => {
+      const [d, c, i] = await Promise.all([
+        supabase.from(TABLE_DEPTS).select('id,name'),
+        supabase.from(TABLE_CATS).select('id,name'),
+        supabase.from(TABLE_ITEMS).select('id,name,category_id,item_number,article_number')
+      ]);
+      if (!d.error && d.data) setDepartments(d.data as Department[]);
+      if (!c.error && c.data) setCategories(c.data as Category[]);
+      if (!i.error && i.data)  setItems(i.data as Item[]);
+    })();
+  }, []);
+
+  const nameOfCategory = (id: number) => categories.find(c => c.id === id)?.name ?? '—';
+  const nameOfItem = (id: number) =>  items.find(i => i.id === id)?.name ?? `Item ${id}`;
+  const itemNumberOf = (id: number) => {
+    const it = items.find(i => i.id === id);
+    return (it?.item_number ?? it?.article_number ?? null) || null;
+  };
+
+  // Lee area_items_view o area_items (fallback) y agrega por item
+  async function loadCurrentTotals() {
+    const deptId = user.role === 'super_admin' ? Number(departmentId) : Number(user.department_id);
+    if (!deptId) { alert('Selecciona un departamento.'); return; }
+
+    setLoading(true);
+    setShowPast(false);
+    setPastTable([]);
+
+    try {
+      // 1) intentar origenes en orden
+      let rowsAI: AnyRow[] | null = null;
+      let qtyField = 'qty_current';
+      for (const src of AREA_ITEMS_SOURCES) {
+        const fields = [
+          AREA_ITEMS_FIELDS.dept, AREA_ITEMS_FIELDS.area, AREA_ITEMS_FIELDS.item, AREA_ITEMS_FIELDS.cat,
+          ...AREA_ITEMS_FIELDS.item_number
+        ].join(',');
+
+        const res = await supabase.from(src.table).select(fields + ',' + src.qtyCandidates.join(','))
+                                   .eq(AREA_ITEMS_FIELDS.dept, deptId);
+
+        if (!res.error && res.data && res.data.length >= 0) {
+          // resolver cuál columna es la qty
+          const first = res.data[0] as AnyRow | undefined;
+          const foundQty = src.qtyCandidates.find(k => first && k in first) ?? src.qtyCandidates[0];
+          qtyField = foundQty;
+          rowsAI = res.data as AnyRow[];
+          break;
+        }
+      }
+      if (!rowsAI) throw new Error('No pude leer area_items_view ni area_items. Verifica nombres.');
+
+      // 2) agregar por item (independiente del área)
+      const agg = new Map<number, { qty: number; category_id: number; item_number?: string | null }>();
+      for (const r of rowsAI) {
+        const itemId = Number(r[AREA_ITEMS_FIELDS.item]);
+        const catId  = Number(r[AREA_ITEMS_FIELDS.cat]);
+        const qty    = Number(r[qtyField] ?? 0);
+        const itemNumKey = AREA_ITEMS_FIELDS.item_number.find(k => k in r) ?? null;
+        const itemNum = itemNumKey ? (r[itemNumKey] as string | null) : null;
+
+        const prev = agg.get(itemId);
+        if (prev) {
+          prev.qty += qty;
+        } else {
+          agg.set(itemId, { qty, category_id: catId, item_number: itemNum });
+        }
+      }
+
+      // 3) traer mes-anterior de monthly_inventories
+      const prevM = month === 1 ? 12 : month - 1;
+      const prevY = month === 1 ? year - 1 : year;
+
+      const prevRes = await supabase
+        .from(TABLE_MI)
+        .select('item_id, qty_total')
+        .eq('department_id', deptId)
+        .eq('month', prevM)
+        .eq('year', prevY);
+
+      const prevMap = new Map<number, number>();
+      if (!prevRes.error && prevRes.data) {
+        for (const r of prevRes.data as AnyRow[]) prevMap.set(Number(r.item_id), Number(r.qty_total ?? 0));
+      }
+
+      // 4) construir filas
+      const next: MonthlyRow[] = Array.from(agg.entries()).map(([item_id, v]) => {
+        const prev = prevMap.get(item_id) ?? 0;
+        return {
+          category_id: v.category_id,
+          category_name: nameOfCategory(v.category_id),
+          item_id,
+          item_name: nameOfItem(item_id),
+          item_number: v.item_number ?? itemNumberOf(item_id),
+          qty_current_total: v.qty,
+          qty_prev_total: prev,
+          diff: v.qty - prev,
+          notes: ''
+        };
+      });
+
+      next.sort((a,b) =>
+        a.category_name.localeCompare(b.category_name) || a.item_name.localeCompare(b.item_name)
+      );
+
+      setRows(next);
+    } catch (e:any) {
+      console.error(e);
+      alert('Error cargando totales actuales. Revisa nombres de tablas/vistas en el bloque de configuración.');
+    } finally {
+      setLoading(false);
     }
-  },[])
-
-  useEffect(()=>{
-    const dep = user.role==='super_admin' ? deptId : user.department_id
-    if(!dep) return
-    supabase.rpc('inventory_matrix', { p_department_id: dep }).then(({data})=> setRows(data||[]))
-  },[deptId])
-
-  async function saveMonthly(){
-    const dep = user.role==='super_admin' ? deptId : user.department_id
-    if(!dep){ alert('Select department'); return }
-    if(!confirm('Save Monthly Inventory?')) return
-    const { data: existing } = await supabase.from('monthly_inventories').select('id').eq('department_id', dep).eq('month', month).eq('year', year).maybeSingle()
-    if(existing){
-      if(!confirm('A monthly record exists for this month/year. Replace it?')) return
-      await supabase.from('monthly_inventory_items').delete().eq('monthly_inventory_id', existing.id)
-      await supabase.from('monthly_inventories').delete().eq('id', existing.id)
-    }
-    const { data: rec, error } = await supabase.from('monthly_inventories').insert({ department_id: dep, month, year, created_at: new Date().toISOString() }).select('*').single()
-    if(error){ alert(error.message); return }
-    const items = rows.map(r=>({ monthly_inventory_id: rec.id, area: r.area, category: r.category, item: r.item, qty: r.qty }))
-    if(items.length){
-      const { error: e2 } = await supabase.from('monthly_inventory_items').insert(items)
-      if(e2){ alert(e2.message); return }
-    }
-    alert('Monthly inventory saved.')
   }
 
-  async function loadPast(){
-    const dep = user.role==='super_admin' ? deptId : user.department_id
-    if(!dep){ alert('Select department'); return }
-    const { data, error } = await supabase.rpc('monthly_inventory_get', { p_department_id: dep, p_month: month, p_year: year })
-    if(error){ alert(error.message); return }
-    setPast(data||[]); setPastOpen(true)
+  async function saveMonthly() {
+    if (!allNotesOk) return;
+    const deptId = user.role === 'super_admin' ? Number(departmentId) : Number(user.department_id);
+    if (!deptId) { alert('Selecciona un departamento.'); return; }
+
+    setLoading(true);
+    try {
+      const payload = rows.map(r => ({
+        department_id: deptId,
+        month, year,
+        category_id: r.category_id,
+        item_id: r.item_id,
+        item_number: r.item_number ?? null,
+        qty_total: r.qty_current_total,
+        notes: r.notes.trim(),
+        created_by: user.id
+      }));
+
+      const up = await supabase
+        .from(TABLE_MI)
+        .upsert(payload, { onConflict: 'department_id,month,year,item_id', ignoreDuplicates: false })
+        .select('id');
+
+      if (up.error) throw up.error;
+      alert('Monthly Inventory guardado correctamente.');
+    } catch (e:any) {
+      console.error(e);
+      alert('Error guardando Monthly Inventory.');
+    } finally {
+      setLoading(false);
+    }
   }
+
+  async function loadPast() {
+    const deptId = user.role === 'super_admin' ? Number(departmentId) : Number(user.department_id);
+    if (!deptId) { alert('Selecciona un departamento.'); return; }
+    if (pastCount < 1 || pastCount > 11) { alert('El valor permitido es 1..11'); return; }
+
+    setLoading(true);
+    try {
+      // etiquetas N meses anteriores a la selección actual
+      const labels: {month:number; year:number; label:string}[] = [];
+      let m = month, y = year;
+      for (let i=0; i<pastCount; i++) {
+        m = m === 1 ? 12 : m - 1;
+        if (m === 12) y = y - 1;
+        labels.push({ month: m, year: y, label: `${MONTH_LABEL(m)}-${String(y).slice(-2)}` });
+      }
+
+      // descargas paralelas
+      const fetches = labels.map(l =>
+        supabase.from(TABLE_MI)
+          .select('category_id,item_id,item_number,qty_total,notes')
+          .eq('department_id', deptId)
+          .eq('month', l.month)
+          .eq('year', l.year)
+      );
+      const resAll = await Promise.all(fetches);
+
+      // indexar por item
+      const byItem = new Map<number, { cat:number; item:number; item_number?:string|null; ser: {idx:number; qty:number; note:string}[] }>();
+      resAll.forEach((res, idx) => {
+        if (res.error || !res.data) return;
+        for (const r of res.data as AnyRow[]) {
+          const it = Number(r.item_id);
+          if (!byItem.has(it)) byItem.set(it, { cat:Number(r.category_id), item:it, item_number:r.item_number ?? null, ser: [] });
+          byItem.get(it)!.ser.push({ idx, qty:Number(r.qty_total ?? 0), note:String(r.notes ?? '').trim() });
+        }
+      });
+
+      // unir con actuales "rows" para nombre y qty actual
+      const table = Array.from(byItem.values()).map(v => {
+        const rn = rows.find(r => r.item_id === v.item);
+        const current_qty = rn?.qty_current_total ?? 0;
+        const history = labels.map((l, pos) => {
+          const hit = v.ser.find(s => s.idx === pos);
+          return { label: l.label, qty: hit ? hit.qty : 0 };
+        });
+        const grouped_notes = labels.map((l,pos) => {
+          const hit = v.ser.find(s => s.idx === pos);
+          return hit && hit.note ? `${l.label}: ${hit.note}` : '';
+        }).filter(Boolean).join(', ');
+
+        return {
+          category_id: v.cat,
+          category_name: nameOfCategory(v.cat),
+          item_id: v.item,
+          item_name: nameOfItem(v.item),
+          item_number: v.item_number ?? itemNumberOf(v.item),
+          current_qty,
+          history,
+          grouped_notes
+        };
+      });
+
+      table.sort((a,b) =>
+        a.category_name.localeCompare(b.category_name) || a.item_name.localeCompare(b.item_name)
+      );
+
+      setPastTable(table);
+      setShowPast(true);
+    } catch (e:any) {
+      console.error(e);
+      alert('Error cargando inventarios pasados.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // agrupación para tabla principal
+  const grouped = useMemo(() => {
+    const by = new Map<number, { name:string; rows: MonthlyRow[]; now:number; prev:number }>();
+    rows.forEach(r => {
+      if (!by.has(r.category_id)) by.set(r.category_id, { name:r.category_name, rows:[], now:0, prev:0 });
+      const g = by.get(r.category_id)!;
+      g.rows.push(r);
+      g.now  += r.qty_current_total;
+      g.prev += r.qty_prev_total;
+    });
+    return Array.from(by.entries()).map(([category_id, v]) => ({
+      category_id, category_name: v.name, rows: v.rows, totalDiff: v.now - v.prev
+    }));
+  }, [rows]);
+
+  const rowBg = (diff:number, current:number) => {
+    if (diff < 0)   return '#ffe5e5'; // rojo
+    if (diff === 0) return '#e8f5e9'; // verde
+    if (diff === current) return '#e3f2fd'; // azul (prev=0)
+    return '#fff3e0'; // naranja
+  };
 
   return (
-    <div className="card">
-      <h3 style={{marginTop:0}}>Monthly Inventory</h3>
-      <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
-        {user.role==='super_admin' && (
-          <select className="select" value={deptId} onChange={e=> setDeptId(e.target.value?Number(e.target.value):'')}>
-            <option value="">Select department</option>
-            {deps.map(d=> <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
+    <div className="p-4 max-w-[1200px] mx-auto">
+      <h1 className="text-2xl font-semibold mb-4">Monthly Inventory</h1>
+
+      <div className="flex flex-wrap items-end gap-3 mb-4">
+        {user.role === 'super_admin' && (
+          <div className="flex flex-col">
+            <label className="text-sm font-medium mb-1">Department</label>
+            <select
+              className="border rounded px-3 py-2 min-w-[240px]"
+              value={departmentId}
+              onChange={e => setDepartmentId(e.target.value ? Number(e.target.value) : '')}
+            >
+              <option value="">Select...</option>
+              {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </div>
         )}
-        <select className="select" value={month} onChange={e=> setMonth(Number(e.target.value))}>{Array.from({length:12},(_,i)=>(<option value={i+1} key={i}>{i+1}</option>))}</select>
-        <input className="input" type="number" value={year} onChange={e=> setYear(Number(e.target.value))}/>
-        <button className="btn btn-primary" onClick={saveMonthly}>Save Monthly Inventory</button>
-        <button className="btn btn-secondary" onClick={loadPast}>Past Inventories</button>
-        {pastOpen && past.length>0 && <button className="btn btn-secondary" onClick={()=> exportToExcel(`monthly-${year}-${month}.xlsx`, past)}>Export</button>}
+
+        <div className="flex flex-col">
+          <label className="text-sm font-medium mb-1">Month</label>
+          <select className="border rounded px-3 py-2" value={month} onChange={e=>setMonth(Number(e.target.value))}>
+            {Array.from({length:12},(_,i)=>i+1).map(m => (
+              <option key={m} value={m}>{MONTH_LABEL(m)}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col">
+          <label className="text-sm font-medium mb-1">Year</label>
+          <input type="number" className="border rounded px-3 py-2 w-[120px]" value={year}
+                 onChange={e => setYear(Number(e.target.value))}/>
+        </div>
+
+        <button className="px-4 py-2 rounded bg-gray-800 text-white disabled:opacity-50"
+                disabled={loading || (user.role === 'super_admin' && !departmentId)}
+                onClick={loadCurrentTotals}>
+          Load current totals
+        </button>
       </div>
 
-      <div className="card" style={{marginTop:12}}>
-        <h4 style={{marginTop:0}}>Current Snapshot</h4>
-        <table>
-          <thead><tr><th>Category</th><th>Item</th><th>Area</th><th>Qty</th></tr></thead>
-          <tbody>{rows.map((r,i)=>(<tr key={i}><td>{r.category}</td><td>{r.item}</td><td>{r.area}</td><td>{r.qty}</td></tr>))}</tbody>
-        </table>
-      </div>
+      {/* Tabla principal */}
+      <div className="border rounded-lg overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-3 py-2 text-left">Category / Item</th>
+                <th className="px-3 py-2 text-left">Item Number</th>
+                <th className="px-3 py-2 text-right">Qty (Current)</th>
+                <th className="px-3 py-2 text-right">Qty (Previous)</th>
+                <th className="px-3 py-2 text-right">Δ (Item)</th>
+                <th className="px-3 py-2 text-right">Δ (Category Total)</th>
+                <th className="px-3 py-2 text-left">Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {grouped.map(group => (
+                <React.Fragment key={group.category_id}>
+                  <tr className="bg-gray-100 font-medium">
+                    <td className="px-3 py-2">{group.category_name}</td>
+                    <td className="px-3 py-2"></td>
+                    <td className="px-3 py-2 text-right">
+                      {group.rows.reduce((a,b)=>a+b.qty_current_total,0)}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {group.rows.reduce((a,b)=>a+b.qty_prev_total,0)}
+                    </td>
+                    <td className="px-3 py-2 text-right">—</td>
+                    <td className="px-3 py-2 text-right">
+                      {group.totalDiff > 0 ? `+${group.totalDiff}` : group.totalDiff}
+                    </td>
+                    <td className="px-3 py-2">—</td>
+                  </tr>
 
-      {pastOpen && (
-        <div className="card" style={{marginTop:12}}>
-          <h4 style={{marginTop:0}}>Past Inventory – {month}/{year}</h4>
-          <table>
-            <thead><tr><th>Category</th><th>Item</th><th>Area</th><th>Qty</th></tr></thead>
-            <tbody>{past.map((r,i)=>(<tr key={i}><td>{r.category}</td><td>{r.item}</td><td>{r.area}</td><td>{r.qty}</td></tr>))}</tbody>
+                  {group.rows.map(r => (
+                    <tr key={r.item_id} style={{ background: rowBg(r.diff, r.qty_current_total) }}>
+                      <td className="px-3 py-2">{r.item_name}</td>
+                      <td className="px-3 py-2">{r.item_number ?? ''}</td>
+                      <td className="px-3 py-2 text-right">{r.qty_current_total}</td>
+                      <td className="px-3 py-2 text-right">{r.qty_prev_total}</td>
+                      <td className="px-3 py-2 text-right">{r.diff > 0 ? `+${r.diff}` : r.diff}</td>
+                      <td className="px-3 py-2 text-right">—</td>
+                      <td className="px-3 py-2">
+                        <input
+                          className="border rounded px-2 py-1 w-full"
+                          placeholder={r.diff !== 0 ? 'Required (diff ≠ 0)' : '—'}
+                          disabled={r.diff === 0}
+                          value={r.notes}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setRows(prev => prev.map(x => x.item_id === r.item_id ? { ...x, notes: v } : x));
+                          }}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </React.Fragment>
+              ))}
+              {rows.length === 0 && (
+                <tr><td colSpan={7} className="px-3 py-6 text-center text-gray-500">
+                  Carga los totales actuales para comenzar.
+                </td></tr>
+              )}
+            </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* Acciones */}
+      <div className="flex flex-wrap items-center gap-3 mt-4">
+        <button
+          className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
+          disabled={loading || rows.length === 0 || !allNotesOk}
+          onClick={saveMonthly}
+          title={!allNotesOk ? 'Completa todas las notas con diff ≠ 0' : 'Guardar Monthly Inventory'}
+        >
+          Save Monthly Inventory
+        </button>
+
+        {/* Spinbox al lado de Past Inventories */}
+        <div className="flex items-center gap-2">
+          <label className="text-sm">Show last</label>
+          <input type="number" min={1} max={11} value={pastCount}
+                 onChange={e => setPastCount(Math.max(1, Math.min(11, Number(e.target.value))))}
+                 className="border rounded px-2 py-1 w-[70px]"/>
+          <span className="text-sm">inventories</span>
+        </div>
+
+        <button
+          className="px-4 py-2 rounded bg-gray-700 text-white disabled:opacity-50"
+          disabled={loading || rows.length === 0}
+          onClick={loadPast}
+        >
+          Past Inventories
+        </button>
+      </div>
+
+      {/* Tabla secundaria */}
+      {showPast && (
+        <div className="mt-6 border rounded-lg overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-3 py-2 text-left">Category / Item</th>
+                  <th className="px-3 py-2 text-left">Item Number</th>
+                  <th className="px-3 py-2 text-right">Qty (Current)</th>
+                  {pastTable[0]?.history.map((h, i) => (
+                    <th key={i} className="px-3 py-2 text-right">Qty ({h.label})</th>
+                  ))}
+                  <th className="px-3 py-2 text-left">Grouped Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  const by = new Map<string, typeof pastTable>();
+                  pastTable.forEach(r => {
+                    const key = `${r.category_id}|${r.category_name}`;
+                    if (!by.has(key)) by.set(key, []);
+                    by.get(key)!.push(r);
+                  });
+
+                  const chunks: React.ReactNode[] = [];
+                  Array.from(by.entries())
+                    .sort((a,b)=> a[0].split('|')[1].localeCompare(b[0].split('|')[1]))
+                    .forEach(([key, arr]) => {
+                      const [,catName] = key.split('|');
+                      chunks.push(
+                        <tr key={`cat-${key}`} className="bg-gray-100 font-medium">
+                          <td className="px-3 py-2">{catName}</td>
+                          <td className="px-3 py-2"></td>
+                          <td className="px-3 py-2 text-right">
+                            {arr.reduce((s,x)=>s+x.current_qty,0)}
+                          </td>
+                          {arr[0]?.history.map((_,i)=>(
+                            <td key={i} className="px-3 py-2 text-right">
+                              {arr.reduce((s,x)=> s + (x.history[i]?.qty ?? 0), 0)}
+                            </td>
+                          ))}
+                          <td className="px-3 py-2">—</td>
+                        </tr>
+                      );
+                      arr.sort((a,b)=>a.item_name.localeCompare(b.item_name))
+                         .forEach(r => {
+                           chunks.push(
+                             <tr key={`it-${key}-${r.item_id}`}>
+                               <td className="px-3 py-2">{r.item_name}</td>
+                               <td className="px-3 py-2">{r.item_number ?? ''}</td>
+                               <td className="px-3 py-2 text-right">{r.current_qty}</td>
+                               {r.history.map((h,i)=>
+                                 <td key={i} className="px-3 py-2 text-right">{h.qty}</td>
+                               )}
+                               <td className="px-3 py-2">{r.grouped_notes || '—'}</td>
+                             </tr>
+                           );
+                         });
+                    });
+
+                  if (chunks.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={3 + (pastTable[0]?.history.length ?? 0) + 1}
+                            className="px-3 py-6 text-center text-gray-500">
+                          No hay inventarios pasados para mostrar.
+                        </td>
+                      </tr>
+                    );
+                  }
+                  return chunks;
+                })()}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
-  )
-}
-export default MonthlyInventory
+  );
+};
+
+export default MonthlyInventory;
