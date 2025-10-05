@@ -276,7 +276,7 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
             <th className="p-2 border">Notes</th>
           </tr>
         </thead>
-        <tbody>
+ <tbody>
   {rows.length === 0 ? (
     <tr>
       <td colSpan={7} className="text-center p-3">
@@ -291,13 +291,16 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
       for (let i = 0; i < rows.length; i++) {
         const r = rows[i];
 
-        // Si cambia la categoría, insertamos una fila de cabecera de categoría
+        // Si cambia la categoría, agregamos una fila de categoría
         if (r.category_name !== lastCategory) {
           lastCategory = r.category_name;
           groupedRows.push(
             <tr
               key={`cat-${r.category_id}-${i}`}
-              className="bg-green-100 font-semibold"
+              style={{
+                backgroundColor: "#d9f9d9", // verde suave visible
+                fontWeight: "600",           // negrita
+              }}
             >
               <td colSpan={7} className="border p-2">
                 {r.category_name}
@@ -342,6 +345,7 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
     })()
   )}
 </tbody>
+
 
       </table>
 
