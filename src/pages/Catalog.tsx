@@ -62,7 +62,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
 
       // Validación UX: si la categoría elegida es 'Tagged_Item', exigir article_number
       const cat = (cats||[]).find((c:any)=> c.id === category_id)
-      const isVal = !!(cat && String(cat.name).toLowerCase() === 'tagged_Item')
+      const isVal = !!(cat && String(cat.name).toLowerCase() === 'tagged_item')
       if(isVal && !article_number){
         alert("Article number is required when category is 'Tagged_Item'.")
         return
@@ -276,7 +276,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
 
           <div className="field"><label>Unit (optional)</label><input className="input" value={payload.unit||''} onChange={e=>setPayload({...payload, unit:e.target.value})}/></div>
           <div className="field"><label>Vendor (optional)</label><input className="input" value={payload.vendor||''} onChange={e=>setPayload({...payload, vendor:e.target.value})}/></div>
-          <div className="field"><label>Valuable category (auto if category name 'Tagged_Item')</label>{is_valuable}<input className="input" value={payload.is_valuable?'Yes':'No'} disabled/></div>
+          <div className="field"><label>Valuable category (auto if category name 'Tagged_Item')</label><input className="input" value={payload.is_valuable?'Yes':'No'} disabled/></div>
           <div className="field"><label>Article number (required if Valuable)</label><input className="input" value={payload.article_number||''} onChange={e=>setPayload({...payload, article_number:e.target.value})}/></div>
         </>)}
       </Modal>
