@@ -22,7 +22,6 @@ type MonthlyRow = {
 
 type Category = { id: number; name: string };
 type Item = { id: number; name: string; category_id: number; article_number?: string | null };
-
 type PastCol = { month: number; year: number; label: string }; // ej. {9,2025,'Sep'}
 
 const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
@@ -37,7 +36,6 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
   const [loading, setLoading] = useState(false);
 
   const [pastCount, setPastCount] = useState(3);
-  // ---- NUEVO: estructura para tabla inferior
   const [pastColumns, setPastColumns] = useState<PastCol[]>([]);
   const [pastGrouped, setPastGrouped] = useState<
     Array<{
@@ -75,7 +73,6 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
     let m = curM;
     let y = curY;
     for (let i = 0; i < count; i++) {
-      // ir un mes hacia atrás cada vuelta
       m = m === 1 ? 12 : m - 1;
       y = m === 12 ? y - 1 : y;
       cols.push({ month: m, year: y, label: monthShort(m) });
@@ -88,7 +85,7 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
     if (!deptId) return;
 
     setLoading(true);
-    setPastGrouped([]); // limpiar tabla de abajo al recargar
+    setPastGrouped([]);
 
     try {
       // 1) Catálogos
@@ -114,8 +111,8 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
 
       const areaIds = (areasData || []).map((a: any) => a.id);
 
-      // 3) Totales actuales (suma del último record de CADA área)
-      let currentTotals = new Map<number, number>(); // item_id -> qty
+      // 3) Totales actuales
+      let currentTotals = new Map<number, number>();
       if (areaIds.length) {
         const recPromises = areaIds.map((areaId: number) =>
           supabase
@@ -162,7 +159,7 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
         prevTotals.set(iid, (prevTotals.get(iid) ?? 0) + q);
       });
 
-      // 5) Unión de ítems: actuales ∪ previos (para que SIEMPRE haya filas)
+      // 5) Unión de ítems: actuales ∪ previos
       const itemIds = new Set<number>([
         ...Array.from(currentTotals.keys()),
         ...Array.from(prevTotals.keys()),
@@ -203,10 +200,10 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
   }
 
   function getColor(diff: number, current: number): string {
-    if (diff < 0) return "bg-red-200";
-    if (diff === 0) return "bg-green-200";
-    if (diff === current) return "bg-blue-200";
-    if (diff > 0) return "bg-orange-200";
+    if (diff < 0) return "bg-red-100";
+    if (diff === 0) return "bg-green-100";
+    if (diff === current) return "bg-blue-100";
+    if (diff > 0) return "bg-orange-100";
     return "";
   }
 
@@ -240,20 +237,17 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
     }
   }
 
-  // ======= SOLO CAMBIADO: construir tabla inferior agrupada con columnas dinámicas =======
-  async function loadPastInventories() {
+  // ======= Tabla inferior (past inventories) =======
+  const makePastInventories = async () => {
     const deptId = user.role === "super_admin" ? Number(departmentId) : Number(user.department_id);
     if (!deptId) return;
 
-    // columnas de meses anteriores (ej. Sep, Aug, Jul)
     const cols = makePastCols(pastCount, month, year);
     setPastColumns(cols);
 
-    // mapa con qty_current desde la tabla de arriba
     const currentByItem = new Map<number, number>();
     rows.forEach((r) => currentByItem.set(r.item_id, r.qty_current_total));
 
-    // Traer datos de cada mes/añO por separado (para filtrar exacto)
     const monthFetches = await Promise.all(
       cols.map((c) =>
         supabase
@@ -264,10 +258,9 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
       )
     );
 
-    // Construir estructuras: por columna (mes) → item_id → qty,nota
     const perColQty: Array<Map<number, number>> = [];
     const perColNotes: Array<Map<number, string>> = [];
-    monthFetches.forEach((res, idx) => {
+    monthFetches.forEach((res) => {
       const qMap = new Map<number, number>();
       const nMap = new Map<number, string>();
       if (!res.error && res.data) {
@@ -281,14 +274,22 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
       perColNotes.push(nMap);
     });
 
-    // Unión de todos los items que aparecen en current o en cualquiera de las columnas pasadas
     const allItemIds = new Set<number>(Array.from(currentByItem.keys()));
     perColQty.forEach((m) => m.forEach((_v, k) => allItemIds.add(k)));
 
-    // Armar filas por categoría
     const byCat = new Map<
       number,
-      { category_name: string; items: Array<{ item_id: number; item_name: string; item_number: string | null; qty_current: number; qty_by_col: number[]; notes_concat: string }> }
+      {
+        category_name: string;
+        items: Array<{
+          item_id: number;
+          item_name: string;
+          item_number: string | null;
+          qty_current: number;
+          qty_by_col: number[];
+          notes_concat: string;
+        }>;
+      }
     >();
 
     const catName = (cid: number) => categories.find((c) => c.id === cid)?.name ?? "—";
@@ -299,10 +300,8 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
       if (!byCat.has(cid)) byCat.set(cid, { category_name: catName(cid), items: [] });
 
       const qty_current = currentByItem.get(item_id) ?? 0;
-
       const qty_by_col = cols.map((_c, idx) => perColQty[idx].get(item_id) ?? 0);
 
-      // concatenar notas: "Sep: texto, Aug: texto, ..."
       const notes_concat = cols
         .map((c, idx) => {
           const note = perColNotes[idx].get(item_id);
@@ -330,221 +329,247 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
       .sort((a, b) => a.category_name.localeCompare(b.category_name));
 
     setPastGrouped(grouped);
-  }
+  };
 
   useEffect(() => {
-    // ejecuta automáticamente la carga al abrir la vista
     loadCurrentTotals();
   }, []);
 
+  // ==== helpers de estilo (inputs/botones coherentes con el tema) ====
+  const inputBase =
+    "border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-300 bg-white";
+  const selectBase =
+    "border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-300 bg-white";
+  const btnPrimary =
+    "inline-flex items-center gap-2 rounded-md bg-green-600 text-white px-4 py-2 text-sm font-medium hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed";
+  const btnSecondary =
+    "inline-flex items-center gap-2 rounded-md bg-blue-600 text-white px-3 py-2 text-sm font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500";
+
+  // Render de notas con mes en negrita: "Sep: texto, Aug: texto"
+  const renderNotesPretty = (notesConcat: string) => {
+    if (!notesConcat) return "—";
+    const parts = notesConcat.split(", ").filter(Boolean);
+    return (
+      <div className="space-y-0.5">
+        {parts.map((p, idx) => {
+          const [monthLabel, ...rest] = p.split(": ");
+          const restText = rest.join(": ");
+          return (
+            <div key={idx}>
+              <span className="font-semibold">{monthLabel}:</span>{" "}
+              <span>{restText}</span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <div className="p-6">
-      <h2 className="text-2xl font-bold mb-4">Monthly Inventory</h2>
-      <div className="mb-2 flex items-center gap-3">
-        <label>Month</label>
-        <select
-          value={month}
-          onChange={(e) => setMonth(Number(e.target.value))}
-          className="border p-1 rounded"
-        >
-          {Array.from({ length: 12 }, (_, i) => (
-            <option key={i + 1} value={i + 1}>
-              {new Date(0, i).toLocaleString("en", { month: "short" }).toUpperCase()}
-            </option>
-          ))}
-        </select>
-        <label>Year</label>
-        <input
-          type="number"
-          value={year}
-          onChange={(e) => setYear(Number(e.target.value))}
-          className="border p-1 w-24 rounded"
-        />
+      <h2 className="text-2xl font-semibold mb-4">Monthly Inventory</h2>
+
+      {/* Filtros */}
+      <div className="mb-4 flex items-end flex-wrap gap-4">
+        <div className="flex flex-col">
+          <label className="text-sm text-gray-700 mb-1">Month</label>
+          <select
+            value={month}
+            onChange={(e) => setMonth(Number(e.target.value))}
+            className={selectBase}
+          >
+            {Array.from({ length: 12 }, (_, i) => (
+              <option key={i + 1} value={i + 1}>
+                {new Date(0, i).toLocaleString("en", { month: "short" }).toUpperCase()}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col">
+          <label className="text-sm text-gray-700 mb-1">Year</label>
+          <input
+            type="number"
+            value={year}
+            onChange={(e) => setYear(Number(e.target.value))}
+            className={inputBase + " w-28"}
+          />
+        </div>
       </div>
 
-      {/* ======= TABLA SUPERIOR (sin cambios funcionales) ======= */}
-      <table className="min-w-full border mt-4">
-        <thead className="bg-gray-200">
-          <tr>
-            <th className="p-2 border">Category / Item</th>
-            <th className="p-2 border">Item Number</th>
-            <th className="p-2 border">Qty (Current)</th>
-            <th className="p-2 border">Qty (Previous)</th>
-            <th className="p-2 border">Δ (Item)</th>
-            <th className="p-2 border">Δ (Category Total)</th>
-            <th className="p-2 border">Notes</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 ? (
+      {/* ======= TABLA SUPERIOR ======= */}
+      <div className="rounded-lg border border-gray-200 overflow-hidden bg-white shadow-sm">
+        <table className="min-w-full">
+          <thead className="bg-gray-50 text-gray-700">
             <tr>
-              <td colSpan={7} className="text-center p-3">
-                {loading ? "Cargando..." : "No hay datos para mostrar."}
-              </td>
+              <th className="p-3 border-b text-left text-sm font-medium">Category / Item</th>
+              <th className="p-3 border-b text-left text-sm font-medium">Item Number</th>
+              <th className="p-3 border-b text-right text-sm font-medium">Qty (Current)</th>
+              <th className="p-3 border-b text-right text-sm font-medium">Qty (Previous)</th>
+              <th className="p-3 border-b text-right text-sm font-medium">Δ (Item)</th>
+              <th className="p-3 border-b text-right text-sm font-medium">Δ (Category Total)</th>
+              <th className="p-3 border-b text-left text-sm font-medium">Notes</th>
             </tr>
-          ) : (
-            (() => {
-              const groupedRows = [];
-              let lastCategory = "";
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="text-center p-6 text-gray-500">
+                  {loading ? "Cargando..." : "No hay datos para mostrar."}
+                </td>
+              </tr>
+            ) : (
+              (() => {
+                const groupedRows = [];
+                let lastCategory = "";
 
-              for (let i = 0; i < rows.length; i++) {
-                const r = rows[i];
+                for (let i = 0; i < rows.length; i++) {
+                  const r = rows[i];
 
-                if (r.category_name !== lastCategory) {
-                  lastCategory = r.category_name;
-                  groupedRows.push(
-                    <tr
-                      key={`cat-${r.category_id}-${i}`}
-                      style={{
-                        backgroundColor: "#d9f9d9",
-                        fontWeight: "600",
-                        borderTopLeftRadius: "8px",
-                        borderTopRightRadius: "8px",
-                        boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
-                      }}
-                    >
-                      <td
-                        colSpan={7}
-                        className="p-2 border-b text-gray-800"
+                  if (r.category_name !== lastCategory) {
+                    lastCategory = r.category_name;
+                    groupedRows.push(
+                      <tr
+                        key={`cat-${r.category_id}-${i}`}
                         style={{
-                          borderTop: "1px solid #b6e7b6",
-                          borderBottom: "1px solid #b6e7b6",
+                          backgroundColor: "#d9f9d9",
+                          fontWeight: 600,
+                          boxShadow: "0 1px 0 #b6e7b6 inset, 0 -1px 0 #b6e7b6 inset",
                         }}
                       >
-                        {r.category_name}
+                        <td colSpan={7} className="p-2 text-gray-800">
+                          {r.category_name}
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  groupedRows.push(
+                    <tr key={i} className={getColor(r.diff, r.qty_current_total)}>
+                      <td className="border-t p-3 pl-6">{r.item_name}</td>
+                      <td className="border-t p-3 text-center">{r.item_number || "—"}</td>
+                      <td className="border-t p-3 text-right">{r.qty_current_total}</td>
+                      <td className="border-t p-3 text-right">{r.qty_prev_total}</td>
+                      <td className="border-t p-3 text-right">{r.diff}</td>
+                      <td className="border-t p-3 text-right">{r.diff === 0 ? "—" : r.diff}</td>
+                      <td className="border-t p-3">
+                        {r.diff === 0 ? (
+                          "—"
+                        ) : (
+                          <input
+                            type="text"
+                            value={r.notes}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setRows((prev) =>
+                                prev.map((x, idx) => (idx === i ? { ...x, notes: val } : x))
+                              );
+                            }}
+                            className={inputBase + " w-56"}
+                            placeholder="Required (diff ≠ 0)"
+                          />
+                        )}
                       </td>
                     </tr>
                   );
                 }
 
-                groupedRows.push(
-                  <tr key={i} className={getColor(r.diff, r.qty_current_total)}>
-                    <td className="border p-2 pl-6">{r.item_name}</td>
-                    <td className="border p-2 text-center">{r.item_number || "—"}</td>
-                    <td className="border p-2 text-center">{r.qty_current_total}</td>
-                    <td className="border p-2 text-center">{r.qty_prev_total}</td>
-                    <td className="border p-2 text-center">{r.diff}</td>
-                    <td className="border p-2 text-center">
-                      {r.diff === 0 ? "—" : r.diff}
-                    </td>
-                    <td className="border p-2 text-center">
-                      {r.diff === 0 ? (
-                        "—"
-                      ) : (
-                        <input
-                          type="text"
-                          value={r.notes}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setRows((prev) =>
-                              prev.map((x, idx) => (idx === i ? { ...x, notes: val } : x))
-                            );
-                          }}
-                          className="border border-gray-300 p-1 w-40 rounded focus:ring-2 focus:ring-green-300"
-                          placeholder="Required (diff ≠ 0)"
-                        />
-                      )}
-                    </td>
-                  </tr>
-                );
-              }
+                return groupedRows;
+              })()
+            )}
+          </tbody>
+        </table>
+      </div>
 
-              return groupedRows;
-            })()
-          )}
-        </tbody>
-      </table>
+      <div className="mt-4">
+        <button
+          disabled={!allNotesFilled}
+          onClick={saveMonthlyInventory}
+          className={btnPrimary}
+        >
+          Save Monthly Inventory
+        </button>
+      </div>
 
-      <button
-        disabled={!allNotesFilled}
-        onClick={saveMonthlyInventory}
-        className={`mt-4 px-4 py-2 rounded text-white ${
-          allNotesFilled ? "bg-green-600" : "bg-gray-400 cursor-not-allowed"
-        }`}
-      >
-        Save Monthly Inventory
-      </button>
-
-      {/* ======= CONTROLES E INVOCACIÓN DE TABLA INFERIOR ======= */}
-      <div className="mt-4 flex items-center gap-2">
-        <label>Show last</label>
+      {/* ======= CONTROLES TABLA INFERIOR ======= */}
+      <div className="mt-6 flex items-center gap-3">
+        <label className="text-sm text-gray-700">Show last</label>
         <input
           type="number"
           min={1}
           max={11}
           value={pastCount}
           onChange={(e) => setPastCount(Number(e.target.value))}
-          className="border p-1 w-16 rounded"
+          className={inputBase + " w-20"}
         />
-        <span>inventories</span>
-        <button
-          onClick={loadPastInventories}
-          className="ml-2 bg-blue-600 text-white px-3 py-1 rounded"
-        >
+        <span className="text-sm text-gray-700">inventories</span>
+        <button onClick={makePastInventories} className={btnSecondary}>
           Past Inventories
         </button>
       </div>
 
-      {/* ======= TABLA INFERIOR (NUEVA MAQUETA) ======= */}
+      {/* ======= TABLA INFERIOR (agrupada) ======= */}
       {pastGrouped.length > 0 && (
-        <table className="min-w-full border mt-4">
-          <thead className="bg-gray-200">
-            <tr>
-              <th className="p-2 border">Category / Item</th>
-              <th className="p-2 border">Item Number</th>
-              <th className="p-2 border text-right">Qty (Up to date)</th>
-              {pastColumns.map((c) => (
-                <th key={`${c.year}-${c.month}`} className="p-2 border text-right">
-                  Qty ({c.label})
-                </th>
-              ))}
-              <th className="p-2 border">Grouped Notes</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pastGrouped.map((grp, gi) => (
-              <React.Fragment key={`grp-${grp.category_id}-${gi}`}>
-                {/* fila categoría */}
-                <tr
-                  style={{
-                    backgroundColor: "#d9f9d9",
-                    fontWeight: 600,
-                    borderTopLeftRadius: "8px",
-                    borderTopRightRadius: "8px",
-                    boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
-                  }}
-                >
-                  <td className="p-2 border-b" colSpan={2}>
-                    {grp.category_name}
-                  </td>
-                  {/* columnas de cantidades vacías en la fila de categoría */}
-                  <td className="p-2 border-b text-right"></td>
-                  {pastColumns.map((_, idx) => (
-                    <td key={`c-${idx}`} className="p-2 border-b text-right">
-                      
+        <div className="mt-4 rounded-lg border border-gray-200 overflow-hidden bg-white shadow-sm">
+          <table className="min-w-full">
+            <thead className="bg-gray-50 text-gray-700">
+              <tr>
+                <th className="p-3 border-b text-left text-sm font-medium">Category / Item</th>
+                <th className="p-3 border-b text-left text-sm font-medium">Item Number</th>
+                <th className="p-3 border-b text-right text-sm font-medium">Qty (Up to date)</th>
+                {pastColumns.map((c) => (
+                  <th
+                    key={`${c.year}-${c.month}`}
+                    className="p-3 border-b text-right text-sm font-medium"
+                  >
+                    Qty ({c.label})
+                  </th>
+                ))}
+                <th className="p-3 border-b text-left text-sm font-medium">Grouped Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pastGrouped.map((grp, gi) => (
+                <React.Fragment key={`grp-${grp.category_id}-${gi}`}>
+                  {/* Fila categoría */}
+                  <tr
+                    style={{
+                      backgroundColor: "#d9f9d9",
+                      fontWeight: 600,
+                      boxShadow: "0 1px 0 #b6e7b6 inset, 0 -1px 0 #b6e7b6 inset",
+                    }}
+                  >
+                    <td className="p-2" colSpan={2}>
+                      {grp.category_name}
                     </td>
-                  ))}
-                  <td className="p-2 border-b"></td>
-                </tr>
-
-                {/* filas items */}
-                {grp.items.map((it) => (
-                  <tr key={`it-${grp.category_id}-${it.item_id}`}>
-                    <td className="border p-2 pl-6">{it.item_name}</td>
-                    <td className="border p-2 text-center">{it.item_number || "—"}</td>
-                    <td className="border p-2 text-right">{it.qty_current}</td>
-                    {it.qty_by_col.map((q, qi) => (
-                      <td key={`q-${qi}`} className="border p-2 text-right">
-                        {q}
+                    <td className="p-2 text-right">—</td>
+                    {pastColumns.map((_, idx) => (
+                      <td key={`c-${idx}`} className="p-2 text-right">
+                        —
                       </td>
                     ))}
-                    <td className="border p-2">{it.notes_concat || "—"}</td>
+                    <td className="p-2">—</td>
                   </tr>
-                ))}
-              </React.Fragment>
-            ))}
-          </tbody>
-        </table>
+
+                  {/* Filas de ítems */}
+                  {grp.items.map((it) => (
+                    <tr key={`it-${grp.category_id}-${it.item_id}`}>
+                      <td className="border-t p-3 pl-6">{it.item_name}</td>
+                      <td className="border-t p-3 text-center">{it.item_number || "—"}</td>
+                      <td className="border-t p-3 text-right">{it.qty_current}</td>
+                      {it.qty_by_col.map((q, qi) => (
+                        <td key={`q-${qi}`} className="border-t p-3 text-right">
+                          {q}
+                        </td>
+                      ))}
+                      <td className="border-t p-3">{renderNotesPretty(it.notes_concat)}</td>
+                    </tr>
+                  ))}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
