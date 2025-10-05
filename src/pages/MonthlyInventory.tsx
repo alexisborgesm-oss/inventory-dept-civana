@@ -524,7 +524,7 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
                       
                     </td>
                   ))}
-                  <td className="p-2 border-b">—</td>
+                  <td className="p-2 border-b"></td>
                 </tr>
 
                 {/* filas items */}
