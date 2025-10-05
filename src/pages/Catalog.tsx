@@ -60,11 +60,11 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
       const vendor = String(payload.vendor ?? '').trim() || null
       const article_number = String(payload.article_number ?? '').trim() || null
 
-      // Validación UX: si la categoría elegida es 'Valioso', exigir article_number
+      // Validación UX: si la categoría elegida es 'Tagged_Item', exigir article_number
       const cat = (cats||[]).find((c:any)=> c.id === category_id)
-      const isVal = !!(cat && String(cat.name).toLowerCase() === 'valioso')
+      const isVal = !!(cat && String(cat.name).toLowerCase() === 'tagged_Item')
       if(isVal && !article_number){
-        alert("Article number is required when category is 'Valioso'.")
+        alert("Article number is required when category is 'Tagged_Item'.")
         return
       }
 
@@ -119,7 +119,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
     const { data: links, error: el } = await supabase.from('area_items').select('area_id').eq('item_id', item.id)
     if(el){ alert(el.message); return }
     const set = new Set<number>((links||[]).map(r=>r.area_id))
-    // Si es Valioso, normaliza a como mucho 1 selección
+    // Si es Tagged_Item, normaliza a como mucho 1 selección
     if (item?.is_valuable && set.size > 1) {
       const first = Array.from(set)[0]
       set.clear()
@@ -133,9 +133,9 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
     if(!linkItem) return
     if(!confirm('Save area assignments for this item?')) return
 
-    // UX: evitar mandar varias áreas si es Valioso
+    // UX: evitar mandar varias áreas si es Tagged_Item
     if (linkItem?.is_valuable && checkedAreas.size > 1) {
-      alert('A valioso item can be assigned to only one area.')
+      alert('A Tagged_Item item can be assigned to only one area.')
       return
     }
 
@@ -262,8 +262,8 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
                 setPayload({
                   ...payload,
                   category_id: cid,
-                  // Solo para visualización: derive is_valuable si la categoría se llama 'Valioso'
-                  is_valuable: cat ? (String(cat.name).toLowerCase() === 'valioso') : false
+                  // Solo para visualización: derive is_valuable si la categoría se llama 'Tagged_Item'
+                  is_valuable: cat ? (String(cat.name).toLowerCase() === 'tagged_Item') : false
                 })
               }}
             >
@@ -276,7 +276,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
 
           <div className="field"><label>Unit (optional)</label><input className="input" value={payload.unit||''} onChange={e=>setPayload({...payload, unit:e.target.value})}/></div>
           <div className="field"><label>Vendor (optional)</label><input className="input" value={payload.vendor||''} onChange={e=>setPayload({...payload, vendor:e.target.value})}/></div>
-          <div className="field"><label>Valuable category (auto if category name 'Valioso')</label><input className="input" value={payload.is_valuable?'Yes':'No'} disabled/></div>
+          <div className="field"><label>Valuable category (auto if category name 'Tagged_Item')</label><input className="input" value={payload.is_valuable?'Yes':'No'} disabled/></div>
           <div className="field"><label>Article number (required if Valuable)</label><input className="input" value={payload.article_number||''} onChange={e=>setPayload({...payload, article_number:e.target.value})}/></div>
         </>)}
       </Modal>
@@ -303,7 +303,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
                 // preserve checked where still visible
                 setCheckedAreas(prev=>{
                   const filtered = new Set(Array.from(prev).filter(id=> (a||[]).some((ar:any)=>ar.id===id)))
-                  // Si es Valioso, normaliza a 1 selección como máximo
+                  // Si es Tagged_Item, normaliza a 1 selección como máximo
                   if (linkItem?.is_valuable && filtered.size > 1) {
                     const first = Array.from(filtered)[0]
                     return new Set(first !== undefined ? [first] : [])
@@ -320,19 +320,19 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
 
         <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px,1fr))', gap:8, marginTop:8}}>
           {linkAreas.map(a=>{
-            const isValioso = !!linkItem?.is_valuable
+            const isTagged_Item = !!linkItem?.is_valuable
             const checked = checkedAreas.has(a.id)
             return (
               <label key={a.id} className="card" style={{display:'flex', alignItems:'center', gap:8}}>
                 <input
                   type="checkbox"
                   checked={checked}
-                  disabled={isValioso && !checked && checkedAreas.size >= 1}
+                  disabled={isTagged_Item && !checked && checkedAreas.size >= 1}
                   onChange={(e)=>{
                     const nextChecked = e.target.checked
                     setCheckedAreas(prev=>{
-                      if(isValioso){
-                        // Valioso: solo una área a la vez
+                      if(isTagged_Item){
+                        // Tagged_Item: solo una área a la vez
                         return nextChecked ? new Set([a.id]) : new Set()
                       }else{
                         // Normal: varias áreas
