@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
-import { supabase } from '@/utils/supabase'; // ajusta si tu ruta difiere
+import { supabase } from '../utils/supabase'; // ajusta si tu ruta difiere
 
 /* =======================
    Tipos base
