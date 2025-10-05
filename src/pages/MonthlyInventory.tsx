@@ -121,7 +121,7 @@ async function loadCurrentTotals() {
     // 1) Catálogos mínimos para cruzar (áreas del depto, items y categorías si no están)
     const [areasRes, itemsRes, catsRes] = await Promise.all([
   supabase.from('areas').select('id, department_id').eq('department_id', deptId),
-  items.length ? Promise.resolve({ data: items, error: null }) : supabase.from('items').select('id,item as name,category_id,article_number'),
+  items.length ? Promise.resolve({ data: items, error: null }) : supabase.from('items').select('id,name as name,category_id,article_number'),
   categories.length ? Promise.resolve({ data: categories, error: null }) : supabase.from('categories').select('id,name'),
 ]);
 
