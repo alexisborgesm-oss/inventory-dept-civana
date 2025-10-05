@@ -518,10 +518,10 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
                     {grp.category_name}
                   </td>
                   {/* columnas de cantidades vacías en la fila de categoría */}
-                  <td className="p-2 border-b text-right">—</td>
+                  <td className="p-2 border-b text-right"></td>
                   {pastColumns.map((_, idx) => (
                     <td key={`c-${idx}`} className="p-2 border-b text-right">
-                      —
+                      
                     </td>
                   ))}
                   <td className="p-2 border-b">—</td>
