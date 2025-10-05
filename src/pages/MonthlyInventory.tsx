@@ -9,6 +9,11 @@ function getMonthLabel(m: number) {
 }
 function getCurrentMonth() { return new Date().getMonth() + 1; } // 1..12
 function getCurrentYear()  { return new Date().getFullYear(); }
+function pickExistingKey<T extends object>(row: T | undefined, candidates: string[], fallback: string) {
+  if (!row) return fallback;
+  const hit = candidates.find(k => Object.prototype.hasOwnProperty.call(row, k));
+  return (hit ?? fallback) as keyof T as string;
+}
 
 /* ========= Tipos ========= */
 type UserRole = 'super_admin' | 'admin' | 'standard';
@@ -100,91 +105,104 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
     const it = items.find(i => i.id === id);
     return (it?.item_number ?? it?.article_number ?? null) || null;
   };
+async function loadCurrentTotals() {
+  const deptId = user.role === 'super_admin' ? Number(departmentId) : Number(user.department_id);
+  if (!deptId) { alert('Selecciona un departamento.'); return; }
 
-  async function loadCurrentTotals() {
-    const deptId = user.role === 'super_admin' ? Number(departmentId) : Number(user.department_id);
-    if (!deptId) { alert('Selecciona un departamento.'); return; }
+  setLoading(true);
+  setShowPast(false);
+  setPastTable([]);
 
-    setLoading(true);
-    setShowPast(false);
-    setPastTable([]);
+  try {
+    // 1) Traemos AREAS e ITEMS para cruzar todo del lado del cliente (robusto)
+    const [areasRes, itemsRes] = await Promise.all([
+      supabase.from('areas').select('id, department_id'),
+      supabase.from(TABLE_ITEMS).select('id,name,category_id,item_number,article_number')
+    ]);
+    if (areasRes.error) throw areasRes.error;
+    if (itemsRes.error) throw itemsRes.error;
 
-    try {
-      // 1) origen area_items_view o area_items
-      let rowsAI: AnyRow[] | null = null;
-      let qtyField = 'qty_current';
-      for (const src of AREA_ITEMS_SOURCES) {
-        const fields = [AREA_ITEMS_FIELDS.dept, AREA_ITEMS_FIELDS.area, AREA_ITEMS_FIELDS.item, AREA_ITEMS_FIELDS.cat,
-                        ...AREA_ITEMS_FIELDS.item_number].join(',');
-        const res = await supabase.from(src.table).select(fields + ',' + src.qtyCandidates.join(','))
-                                   .eq(AREA_ITEMS_FIELDS.dept, deptId);
-        if (!res.error && res.data && res.data.length >= 0) {
-          const first = res.data[0] as AnyRow | undefined;
-          const foundQty = src.qtyCandidates.find(k => first && k in first) ?? src.qtyCandidates[0];
-          qtyField = foundQty;
-          rowsAI = res.data as AnyRow[];
-          break;
-        }
-      }
-      if (!rowsAI) throw new Error('No pude leer area_items_view ni area_items.');
+    const areasMap = new Map<number, number>(); // area_id -> department_id
+    (areasRes.data ?? []).forEach((a: any) => areasMap.set(Number(a.id), Number(a.department_id)));
 
-      // 2) agregar por item
-      const agg = new Map<number, { qty: number; category_id: number; item_number?: string | null }>();
-      for (const r of rowsAI) {
-        const itemId = Number(r[AREA_ITEMS_FIELDS.item]);
-        const catId  = Number(r[AREA_ITEMS_FIELDS.cat]);
-        const qty    = Number(r[qtyField] ?? 0);
-        const itemNumKey = AREA_ITEMS_FIELDS.item_number.find(k => k in r) ?? null;
-        const itemNum = itemNumKey ? (r[itemNumKey] as string | null) : null;
+    // refrescamos caches locales por si no estaban
+    if (items.length === 0 && itemsRes.data) setItems(itemsRes.data as Item[]);
 
-        const prev = agg.get(itemId);
-        if (prev) prev.qty += qty;
-        else agg.set(itemId, { qty, category_id: catId, item_number: itemNum });
-      }
+    // 2) Leemos area_items con el mínimo seguro
+    const aiRes = await supabase
+      .from('area_items')
+      .select('area_id,item_id,qty_current,qty,quantity'); // pedimos varias posibles columnas
 
-      // 3) mes anterior inmediato
-      const prevM = month === 1 ? 12 : month - 1;
-      const prevY = month === 1 ? year - 1 : year;
+    if (aiRes.error) throw aiRes.error;
 
-      const prevRes = await supabase
-        .from(TABLE_MI)
-        .select('item_id, qty_total')
-        .eq('department_id', deptId)
-        .eq('month', prevM)
-        .eq('year', prevY);
+    const aiRows = (aiRes.data ?? []) as Record<string, any>[];
 
-      const prevMap = new Map<number, number>();
-      if (!prevRes.error && prevRes.data) {
-        for (const r of prevRes.data as AnyRow[]) prevMap.set(Number(r.item_id), Number(r.qty_total ?? 0));
-      }
+    // Detectamos cómo se llama la columna de cantidad realmente presente
+    const qtyField = pickExistingKey(aiRows[0], ['qty_current','qty','quantity'], 'qty');
 
-      // 4) construir filas
-      const next: MonthlyRow[] = Array.from(agg.entries()).map(([item_id, v]) => {
-        const prev = prevMap.get(item_id) ?? 0;
-        return {
-          category_id: v.category_id,
-          category_name: nameOfCategory(v.category_id),
-          item_id,
-          item_name: nameOfItem(item_id),
-          item_number: v.item_number ?? itemNumberOf(item_id),
-          qty_current_total: v.qty,
-          qty_prev_total: prev,
-          diff: v.qty - prev,
-          notes: ''
-        };
-      });
-
-      next.sort((a,b) =>
-        a.category_name.localeCompare(b.category_name) || a.item_name.localeCompare(b.item_name)
-      );
-      setRows(next);
-    } catch (e:any) {
-      console.error(e);
-      alert('Error cargando totales actuales.');
-    } finally {
-      setLoading(false);
+    // 3) Filtramos por el departamento y agregamos por item
+    const agg = new Map<number, number>(); // item_id -> total qty
+    for (const r of aiRows) {
+      const areaId = Number(r.area_id);
+      if (areasMap.get(areaId) !== deptId) continue; // descarta si no pertenece al depto
+      const itemId = Number(r.item_id);
+      const q = Number(r[qtyField] ?? 0);
+      agg.set(itemId, (agg.get(itemId) ?? 0) + q);
     }
+
+    // 4) Mes anterior inmediato
+    const prevM = month === 1 ? 12 : month - 1;
+    const prevY = month === 1 ? year - 1 : year;
+
+    const prevRes = await supabase
+      .from(TABLE_MI)
+      .select('item_id, qty_total')
+      .eq('department_id', deptId)
+      .eq('month', prevM)
+      .eq('year', prevY);
+
+    const prevMap = new Map<number, number>();
+    if (!prevRes.error && prevRes.data) {
+      for (const r of prevRes.data as any[]) prevMap.set(Number(r.item_id), Number(r.qty_total ?? 0));
+    }
+
+    // 5) Armamos filas con datos de items y categorías (del catálogo)
+    const catName = (id: number) => categories.find(c => c.id === id)?.name ?? '—';
+    const getItem = (id: number) => items.find(i => i.id === id);
+
+    const built = Array.from(agg.entries()).map(([item_id, qty]) => {
+      const it = getItem(item_id);
+      const category_id = it?.category_id ?? 0;
+      const item_number  = it?.item_number ?? it?.article_number ?? null;
+      const prev = prevMap.get(item_id) ?? 0;
+
+      return {
+        category_id,
+        category_name: catName(category_id),
+        item_id,
+        item_name: it?.name ?? `Item ${item_id}`,
+        item_number,
+        qty_current_total: qty,
+        qty_prev_total: prev,
+        diff: qty - prev,
+        notes: ''
+      } as MonthlyRow;
+    });
+
+    built.sort((a,b) =>
+      a.category_name.localeCompare(b.category_name) || a.item_name.localeCompare(b.item_name)
+    );
+
+    setRows(built);
+  } catch (e: any) {
+    console.error(e);
+    alert('Error cargando totales actuales. Revisa que existan las tablas "areas", "area_items" e "items".');
+  } finally {
+    setLoading(false);
   }
+}
+
+  
 
   async function saveMonthly() {
     if (!allNotesOk) return;
