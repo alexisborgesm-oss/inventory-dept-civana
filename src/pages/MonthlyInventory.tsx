@@ -486,7 +486,7 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={7} className="empty">
-                  {loading ? "Cargando..." : "No hay datos para mostrar."}
+                  {loading ? "Loading..." : "No data to show."}
                 </td>
               </tr>
             ) : (
@@ -587,7 +587,7 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
                 {(pastColumns.length ? pastColumns : makePastCols(pastCount, month, year)).map(
                   (c) => (
                     <th key={`${c.year}-${c.month}`} className="right">
-                      Qty ({c.label})
+                     {c.label}
                     </th>
                   )
                 )}
