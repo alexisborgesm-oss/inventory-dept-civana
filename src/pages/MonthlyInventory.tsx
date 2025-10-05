@@ -113,15 +113,18 @@ async function loadCurrentTotals() {
     const prevM = month === 1 ? 12 : month - 1;
     const prevY = month === 1 ? year - 1 : year;
     const { data: prevData, error: prevErr } = await supabase
-      .from("monthly_inventories")
-      .select("item_id, qty_total")
-      .eq("department_id", deptId)
-      .eq("month", prevM)
-      .eq("year", prevY);
+  .from('monthly_inventories')
+  .select('item_id, qty_total')
+  .match({ department_id: deptId, month: prevM, year: prevY })
+  .not('item_id', 'is', null);
     if (prevErr) throw prevErr;
 
     const prevTotals = new Map<number, number>();
-    (prevData || []).forEach((r: any) => prevTotals.set(r.item_id, r.qty_total || 0));
+(prevData ?? []).forEach((r: any) => {
+  const iid = Number(r.item_id);
+  const q = Number(r.qty_total ?? 0);
+  prevTotals.set(iid, (prevTotals.get(iid) ?? 0) + q);
+});
 
     // 5) Unión de ítems: actuales ∪ previos (para que SIEMPRE haya filas)
     const itemIds = new Set<number>([
