@@ -1,16 +1,25 @@
+// src/pages/MonthlyInventory.tsx
 import React, { useEffect, useMemo, useState } from 'react';
+import { supabase } from '../utils/supabase'; // <-- import RELATIVO (ajústalo si tu ruta difiere)
 
-import { supabase } from '../utils/supabase'; // ajusta si tu ruta difiere
+/* ========= Helpers sin dayjs ========= */
+function getMonthLabel(m: number) {
+  const labels = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  return labels[(m - 1 + 12) % 12];
+}
+function getCurrentMonth() { return new Date().getMonth() + 1; } // 1..12
+function getCurrentYear()  { return new Date().getFullYear(); }
 
-/* =======================
-   Tipos base
-======================= */
+/* ========= Tipos ========= */
 type UserRole = 'super_admin' | 'admin' | 'standard';
 type User = { id: string; role: UserRole; department_id: number | null };
 
 type Department = { id: number; name: string };
-type Category = { id: number; name: string };
-type Item = { id: number; name: string; item_number?: string | null; article_number?: string | null; category_id: number };
+type Category   = { id: number; name: string };
+type Item = {
+  id: number; name: string; category_id: number;
+  item_number?: string | null; article_number?: string | null;
+};
 
 type AnyRow = Record<string, any>;
 
@@ -25,61 +34,39 @@ type MonthlyRow = {
   diff: number;
   notes: string;
 };
-// Reemplazo liviano de DAYJS
-function getMonthLabel(m: number) {
-  const labels = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-  return labels[(m - 1 + 12) % 12];
-}
-function getCurrentMonth() {
-  return new Date().getMonth() + 1; // 1..12
-}
-function getCurrentYear() {
-  return new Date().getFullYear();
-}
 
-const MONTH_LABEL = (m: number) =>
-  dayjs(`2025-${String(m).padStart(2, '0')}-01`).format('MMM').toUpperCase();
-
-/* =======================
-   Config rápida (aquí ajustas nombres si difieren)
-======================= */
+/* ========= Config rápida ========= */
 const TABLE_DEPTS = 'departments';
 const TABLE_CATS  = 'categories';
 const TABLE_ITEMS = 'items';
 const TABLE_MI    = 'monthly_inventories';
 
-// Preferencia: primero intenta la vista, si falla usa la tabla base
+// Primero intenta la vista, si no existe usa la tabla
 const AREA_ITEMS_SOURCES = [
   { table: 'area_items_view', qtyCandidates: ['qty_current','qty','quantity'] },
   { table: 'area_items',      qtyCandidates: ['qty_current','qty','quantity'] },
 ];
 
-// Campos esperados en area_items/_view (ajusta solo aquí si difiere)
+// Campos de area_items/_view
 const AREA_ITEMS_FIELDS = {
   dept: 'department_id',
   area: 'area_id',
   item: 'item_id',
   cat:  'category_id',
-  item_number: ['item_number', 'article_number'] // toma el primero que exista
+  item_number: ['item_number', 'article_number'] // usa el primero que exista
 };
 
-/* =======================
-   Componente
-======================= */
 const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
-  // filtros
   const [departmentId, setDepartmentId] = useState<number | ''>(
     user.role === 'super_admin' ? '' : (user.department_id ?? '')
   );
   const [month, setMonth] = useState<number>(getCurrentMonth());
-  const [year, setYear] = useState<number>(getCurrentYear());
+  const [year,  setYear]  = useState<number>(getCurrentYear());
 
-  // catálogos
   const [departments, setDepartments] = useState<Department[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [items, setItems] = useState<Item[]>([]);
+  const [categories,  setCategories]  = useState<Category[]>([]);
+  const [items,       setItems]       = useState<Item[]>([]);
 
-  // datos
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<MonthlyRow[]>([]);
   const [showPast, setShowPast] = useState(false);
@@ -103,18 +90,17 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
       ]);
       if (!d.error && d.data) setDepartments(d.data as Department[]);
       if (!c.error && c.data) setCategories(c.data as Category[]);
-      if (!i.error && i.data)  setItems(i.data as Item[]);
+      if (!i.error && i.data) setItems(i.data as Item[]);
     })();
   }, []);
 
   const nameOfCategory = (id: number) => categories.find(c => c.id === id)?.name ?? '—';
-  const nameOfItem = (id: number) =>  items.find(i => i.id === id)?.name ?? `Item ${id}`;
-  const itemNumberOf = (id: number) => {
+  const nameOfItem     = (id: number) => items.find(i => i.id === id)?.name ?? `Item ${id}`;
+  const itemNumberOf   = (id: number) => {
     const it = items.find(i => i.id === id);
     return (it?.item_number ?? it?.article_number ?? null) || null;
   };
 
-  // Lee area_items_view o area_items (fallback) y agrega por item
   async function loadCurrentTotals() {
     const deptId = user.role === 'super_admin' ? Number(departmentId) : Number(user.department_id);
     if (!deptId) { alert('Selecciona un departamento.'); return; }
@@ -124,20 +110,15 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
     setPastTable([]);
 
     try {
-      // 1) intentar origenes en orden
+      // 1) origen area_items_view o area_items
       let rowsAI: AnyRow[] | null = null;
       let qtyField = 'qty_current';
       for (const src of AREA_ITEMS_SOURCES) {
-        const fields = [
-          AREA_ITEMS_FIELDS.dept, AREA_ITEMS_FIELDS.area, AREA_ITEMS_FIELDS.item, AREA_ITEMS_FIELDS.cat,
-          ...AREA_ITEMS_FIELDS.item_number
-        ].join(',');
-
+        const fields = [AREA_ITEMS_FIELDS.dept, AREA_ITEMS_FIELDS.area, AREA_ITEMS_FIELDS.item, AREA_ITEMS_FIELDS.cat,
+                        ...AREA_ITEMS_FIELDS.item_number].join(',');
         const res = await supabase.from(src.table).select(fields + ',' + src.qtyCandidates.join(','))
                                    .eq(AREA_ITEMS_FIELDS.dept, deptId);
-
         if (!res.error && res.data && res.data.length >= 0) {
-          // resolver cuál columna es la qty
           const first = res.data[0] as AnyRow | undefined;
           const foundQty = src.qtyCandidates.find(k => first && k in first) ?? src.qtyCandidates[0];
           qtyField = foundQty;
@@ -145,9 +126,9 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
           break;
         }
       }
-      if (!rowsAI) throw new Error('No pude leer area_items_view ni area_items. Verifica nombres.');
+      if (!rowsAI) throw new Error('No pude leer area_items_view ni area_items.');
 
-      // 2) agregar por item (independiente del área)
+      // 2) agregar por item
       const agg = new Map<number, { qty: number; category_id: number; item_number?: string | null }>();
       for (const r of rowsAI) {
         const itemId = Number(r[AREA_ITEMS_FIELDS.item]);
@@ -157,14 +138,11 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
         const itemNum = itemNumKey ? (r[itemNumKey] as string | null) : null;
 
         const prev = agg.get(itemId);
-        if (prev) {
-          prev.qty += qty;
-        } else {
-          agg.set(itemId, { qty, category_id: catId, item_number: itemNum });
-        }
+        if (prev) prev.qty += qty;
+        else agg.set(itemId, { qty, category_id: catId, item_number: itemNum });
       }
 
-      // 3) traer mes-anterior de monthly_inventories
+      // 3) mes anterior inmediato
       const prevM = month === 1 ? 12 : month - 1;
       const prevY = month === 1 ? year - 1 : year;
 
@@ -199,11 +177,10 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
       next.sort((a,b) =>
         a.category_name.localeCompare(b.category_name) || a.item_name.localeCompare(b.item_name)
       );
-
       setRows(next);
     } catch (e:any) {
       console.error(e);
-      alert('Error cargando totales actuales. Revisa nombres de tablas/vistas en el bloque de configuración.');
+      alert('Error cargando totales actuales.');
     } finally {
       setLoading(false);
     }
@@ -249,7 +226,7 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
 
     setLoading(true);
     try {
-      // etiquetas N meses anteriores a la selección actual
+      // N meses anteriores a la selección actual
       const labels: {month:number; year:number; label:string}[] = [];
       let m = month, y = year;
       for (let i=0; i<pastCount; i++) {
@@ -258,7 +235,6 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
         labels.push({ month: m, year: y, label: `${getMonthLabel(m)}-${String(y).slice(-2)}` });
       }
 
-      // descargas paralelas
       const fetches = labels.map(l =>
         supabase.from(TABLE_MI)
           .select('category_id,item_id,item_number,qty_total,notes')
@@ -268,8 +244,7 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
       );
       const resAll = await Promise.all(fetches);
 
-      // indexar por item
-      const byItem = new Map<number, { cat:number; item:number; item_number?:string|null; ser: {idx:number; qty:number; note:string}[] }>();
+      const byItem = new Map<number, { cat:number; item:number; item_number?:string|null; ser:{idx:number; qty:number; note:string}[] }>();
       resAll.forEach((res, idx) => {
         if (res.error || !res.data) return;
         for (const r of res.data as AnyRow[]) {
@@ -279,7 +254,6 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
         }
       });
 
-      // unir con actuales "rows" para nombre y qty actual
       const table = Array.from(byItem.values()).map(v => {
         const rn = rows.find(r => r.item_id === v.item);
         const current_qty = rn?.qty_current_total ?? 0;
@@ -318,7 +292,6 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
     }
   }
 
-  // agrupación para tabla principal
   const grouped = useMemo(() => {
     const by = new Map<number, { name:string; rows: MonthlyRow[]; now:number; prev:number }>();
     rows.forEach(r => {
@@ -334,10 +307,10 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
   }, [rows]);
 
   const rowBg = (diff:number, current:number) => {
-    if (diff < 0)   return '#ffe5e5'; // rojo
-    if (diff === 0) return '#e8f5e9'; // verde
+    if (diff < 0)   return '#ffe5e5';   // rojo
+    if (diff === 0) return '#e8f5e9';   // verde
     if (diff === current) return '#e3f2fd'; // azul (prev=0)
-    return '#fff3e0'; // naranja
+    return '#fff3e0';                    // naranja
   };
 
   return (
@@ -410,7 +383,12 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
                     </td>
                     <td className="px-3 py-2 text-right">—</td>
                     <td className="px-3 py-2 text-right">
-                      {group.totalDiff > 0 ? `+${group.totalDiff}` : group.totalDiff}
+                      {(() => {
+                        const now  = group.rows.reduce((a,b)=>a+b.qty_current_total,0);
+                        const prev = group.rows.reduce((a,b)=>a+b.qty_prev_total,0);
+                        const d = now - prev;
+                        return d > 0 ? `+${d}` : d;
+                      })()}
                     </td>
                     <td className="px-3 py-2">—</td>
                   </tr>
@@ -460,7 +438,6 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
           Save Monthly Inventory
         </button>
 
-        {/* Spinbox al lado de Past Inventories */}
         <div className="flex items-center gap-2">
           <label className="text-sm">Show last</label>
           <input type="number" min={1} max={11} value={pastCount}
