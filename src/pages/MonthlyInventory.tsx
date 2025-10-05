@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "../utils/supabase";
 import "./MonthlyInventory.css";
+import { utils as XLSXUtils, writeFile as XLSXWriteFile, WorkBook } from "xlsx";
 
 type User = {
   id: string;
@@ -231,6 +232,7 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
     }
   }
 
+  // ======= Past inventories =======
   const makePastInventories = async () => {
     const deptId = user.role === "super_admin" ? Number(departmentId) : Number(user.department_id);
     if (!deptId) return;
@@ -293,9 +295,12 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
       if (!byCat.has(cid)) byCat.set(cid, { category_name: catName(cid), items: [] });
 
       const qty_current = currentByItem.get(item_id) ?? 0;
-      const qty_by_col = cols.map((_c, idx) => perColQty[idx].get(item_id) ?? 0);
+      const qty_by_col = pastColumns.length
+        ? pastColumns.map((_c, idx) => perColQty[idx].get(item_id) ?? 0)
+        : makePastCols(pastCount, month, year).map((_c, idx) => perColQty[idx].get(item_id) ?? 0);
 
-      const notes_concat = cols
+      const baseCols = pastColumns.length ? pastColumns : makePastCols(pastCount, month, year);
+      const notes_concat = baseCols
         .map((c, idx) => {
           const note = perColNotes[idx].get(item_id);
           return note ? `${c.label}: ${note}` : null;
@@ -322,6 +327,85 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
       .sort((a, b) => a.category_name.localeCompare(b.category_name));
 
     setPastGrouped(grouped);
+  };
+
+  // ======= Export helpers =======
+  const exportTopToExcel = () => {
+    if (!rows.length) {
+      alert("No hay datos para exportar.");
+      return;
+    }
+    const headers = [
+      "Category / Item",
+      "Item Number",
+      "Qty (Current)",
+      "Qty (Previous)",
+      "Δ (Item)",
+      "Δ (Category Total)",
+      "Notes",
+    ];
+
+    const aoa: any[][] = [headers];
+    let lastCat = "";
+    rows.forEach((r) => {
+      if (r.category_name !== lastCat) {
+        lastCat = r.category_name;
+        aoa.push([r.category_name, "", "", "", "", "", ""]);
+      }
+      aoa.push([
+        r.item_name,
+        r.item_number || "—",
+        r.qty_current_total,
+        r.qty_prev_total,
+        r.diff,
+        r.diff === 0 ? "—" : r.diff,
+        r.diff === 0 ? "—" : r.notes || "",
+      ]);
+    });
+
+    const ws = XLSXUtils.aoa_to_sheet(aoa);
+    const wb: WorkBook = XLSXUtils.book_new();
+    XLSXUtils.book_append_sheet(wb, ws, "Monthly");
+    const fileName = `Monthly_${monthShort(month)}_${year}.xlsx`;
+    XLSXWriteFile(wb, fileName);
+  };
+
+  const exportBottomToExcel = () => {
+    if (!pastGrouped.length) {
+      alert("No hay inventarios pasados para exportar.");
+      return;
+    }
+    const dynamicCols = (pastColumns.length ? pastColumns : makePastCols(pastCount, month, year));
+    const headers = [
+      "Category / Item",
+      "Item Number",
+      "Qty (Up to date)",
+      ...dynamicCols.map((c) => `Qty (${c.label})`),
+      "Grouped Notes",
+    ];
+
+    const aoa: any[][] = [headers];
+
+    pastGrouped.forEach((grp) => {
+      // Category row
+      aoa.push([grp.category_name, "", "—", ...dynamicCols.map(() => "—"), "—"]);
+
+      grp.items.forEach((it) => {
+        aoa.push([
+          it.item_name,
+          it.item_number || "—",
+          it.qty_current,
+          ...it.qty_by_col,
+          it.notes_concat || "—",
+        ]);
+      });
+    });
+
+    const ws = XLSXUtils.aoa_to_sheet(aoa);
+    const wb: WorkBook = XLSXUtils.book_new();
+    XLSXUtils.book_append_sheet(wb, ws, "Past");
+    const fileName = `Monthly_Past_${monthShort(month)}_${year}.xlsx`;
+    XLSXWriteFile(wb, fileName);
   };
 
   const renderNotesPretty = (notesConcat: string) => {
@@ -351,6 +435,7 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
     <div className="mi-container">
       <h2 className="mi-title">Monthly Inventory</h2>
 
+      {/* Filtros */}
       <div className="filters">
         <div className="field">
           <label className="label">Month</label>
@@ -378,7 +463,13 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
         </div>
       </div>
 
+      {/* ======= TABLA SUPERIOR ======= */}
       <div className="card">
+        <div className="card-actions">
+          <button className="btn btn-secondary" onClick={exportTopToExcel}>
+            Export to Excel
+          </button>
+        </div>
         <table className="table">
           <thead>
             <tr>
@@ -395,7 +486,7 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={7} className="empty">
-                  {loading ? "Loading..." : "No data to show."}
+                  {loading ? "Cargando..." : "No hay datos para mostrar."}
                 </td>
               </tr>
             ) : (
@@ -462,6 +553,7 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
         </button>
       </div>
 
+      {/* ======= CONTROLES TABLA INFERIOR ======= */}
       <div className="past-controls">
         <label className="label-inline">Show last</label>
         <input
@@ -478,19 +570,27 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
         </button>
       </div>
 
+      {/* ======= TABLA INFERIOR ======= */}
       {pastGrouped.length > 0 && (
         <div className="card">
+          <div className="card-actions">
+            <button className="btn btn-secondary" onClick={exportBottomToExcel}>
+              Export to Excel
+            </button>
+          </div>
           <table className="table">
             <thead>
               <tr>
                 <th>Category / Item</th>
                 <th>Item Number</th>
                 <th className="right">Qty (Up to date)</th>
-                {pastColumns.map((c) => (
-                  <th key={`${c.year}-${c.month}`} className="right">
-                     {c.label}
-                  </th>
-                ))}
+                {(pastColumns.length ? pastColumns : makePastCols(pastCount, month, year)).map(
+                  (c) => (
+                    <th key={`${c.year}-${c.month}`} className="right">
+                      Qty ({c.label})
+                    </th>
+                  )
+                )}
                 <th>Grouped Notes</th>
               </tr>
             </thead>
@@ -500,9 +600,13 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
                   <tr className="cat-row">
                     <td colSpan={2}>{grp.category_name}</td>
                     <td className="right">—</td>
-                    {pastColumns.map((_, idx) => (
-                      <td key={`c-${idx}`} className="right">—</td>
-                    ))}
+                    {(pastColumns.length ? pastColumns : makePastCols(pastCount, month, year)).map(
+                      (_c, idx) => (
+                        <td key={`c-${idx}`} className="right">
+                          —
+                        </td>
+                      )
+                    )}
                     <td>—</td>
                   </tr>
 
