@@ -599,15 +599,15 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
                 <React.Fragment key={`grp-${grp.category_id}-${gi}`}>
                   <tr className="cat-row">
                     <td colSpan={2}>{grp.category_name}</td>
-                    <td className="right">—</td>
+                    <td className="right"></td>
                     {(pastColumns.length ? pastColumns : makePastCols(pastCount, month, year)).map(
                       (_c, idx) => (
                         <td key={`c-${idx}`} className="right">
-                          —
+                          
                         </td>
                       )
                     )}
-                    <td>—</td>
+                    <td></td>
                   </tr>
 
                   {grp.items.map((it) => (
