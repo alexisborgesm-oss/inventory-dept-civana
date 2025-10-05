@@ -291,24 +291,35 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
       for (let i = 0; i < rows.length; i++) {
         const r = rows[i];
 
-        // Si cambia la categoría, agregamos una fila de categoría
+        // Si cambia la categoría, insertamos una fila de encabezado visualmente destacada
         if (r.category_name !== lastCategory) {
           lastCategory = r.category_name;
           groupedRows.push(
             <tr
               key={`cat-${r.category_id}-${i}`}
               style={{
-                backgroundColor: "#d9f9d9", // verde suave visible
+                backgroundColor: "#d9f9d9", // verde pastel suave
                 fontWeight: "600",           // negrita
+                borderTopLeftRadius: "8px",
+                borderTopRightRadius: "8px",
+                boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
               }}
             >
-              <td colSpan={7} className="border p-2">
+              <td
+                colSpan={7}
+                className="p-2 border-b text-gray-800"
+                style={{
+                  borderTop: "1px solid #b6e7b6",
+                  borderBottom: "1px solid #b6e7b6",
+                }}
+              >
                 {r.category_name}
               </td>
             </tr>
           );
         }
 
+        // Fila del artículo
         groupedRows.push(
           <tr key={i} className={getColor(r.diff, r.qty_current_total)}>
             <td className="border p-2 pl-6">{r.item_name}</td>
@@ -332,7 +343,7 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
                       prev.map((x, idx) => (idx === i ? { ...x, notes: val } : x))
                     );
                   }}
-                  className="border p-1 w-40 rounded"
+                  className="border border-gray-300 p-1 w-40 rounded focus:ring-2 focus:ring-green-300"
                   placeholder="Required (diff ≠ 0)"
                 />
               )}
@@ -345,6 +356,7 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
     })()
   )}
 </tbody>
+
 
 
       </table>
