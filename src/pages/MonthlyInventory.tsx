@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import dayjs from 'dayjs';
+
 import { supabase } from '@/utils/supabase'; // ajusta si tu ruta difiere
 
 /* =======================
@@ -25,6 +25,17 @@ type MonthlyRow = {
   diff: number;
   notes: string;
 };
+// Reemplazo liviano de DAYJS
+function getMonthLabel(m: number) {
+  const labels = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  return labels[(m - 1 + 12) % 12];
+}
+function getCurrentMonth() {
+  return new Date().getMonth() + 1; // 1..12
+}
+function getCurrentYear() {
+  return new Date().getFullYear();
+}
 
 const MONTH_LABEL = (m: number) =>
   dayjs(`2025-${String(m).padStart(2, '0')}-01`).format('MMM').toUpperCase();
@@ -60,8 +71,8 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
   const [departmentId, setDepartmentId] = useState<number | ''>(
     user.role === 'super_admin' ? '' : (user.department_id ?? '')
   );
-  const [month, setMonth] = useState<number>(dayjs().month() + 1);
-  const [year, setYear] = useState<number>(dayjs().year());
+  const [month, setMonth] = useState<number>(getCurrentMonth());
+  const [year, setYear] = useState<number>(getCurrentYear());
 
   // catálogos
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -244,7 +255,7 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
       for (let i=0; i<pastCount; i++) {
         m = m === 1 ? 12 : m - 1;
         if (m === 12) y = y - 1;
-        labels.push({ month: m, year: y, label: `${MONTH_LABEL(m)}-${String(y).slice(-2)}` });
+        labels.push({ month: m, year: y, label: `${getMonthLabel(m)}-${String(y).slice(-2)}` });
       }
 
       // descargas paralelas
@@ -352,7 +363,7 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
           <label className="text-sm font-medium mb-1">Month</label>
           <select className="border rounded px-3 py-2" value={month} onChange={e=>setMonth(Number(e.target.value))}>
             {Array.from({length:12},(_,i)=>i+1).map(m => (
-              <option key={m} value={m}>{MONTH_LABEL(m)}</option>
+              <option key={m} value={m}>{getMonthLabel(m)}</option>
             ))}
           </select>
         </div>
