@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "../utils/supabase";
 import "./MonthlyInventory.css";
-import { Workbook } from "exceljs";
-import { saveAs } from "file-saver";
-
+// 👇 Quitamos imports estáticos de exceljs y file-saver para evitar errores de build en Vercel
+// import { Workbook } from "exceljs";
+// import { saveAs } from "file-saver";
 
 type User = {
   id: string;
@@ -147,7 +147,7 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
       const { data: prevData, error: prevErr } = await supabase
         .from("monthly_inventories")
         .select("item_id, qty_total")
-        .match({ department_id: deptId, month: prevM, year: prevY })
+        .match({ department_id: Number(deptId), month: prevM, year: prevY })
         .not("item_id", "is", null);
       if (prevErr) throw prevErr;
 
@@ -250,7 +250,7 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
         supabase
           .from("monthly_inventories")
           .select("item_id, qty_total, notes")
-          .match({ department_id: deptId, month: c.month, year: c.year })
+          .match({ department_id: Number(deptId), month: c.month, year: c.year })
           .not("item_id", "is", null)
       )
     );
@@ -332,189 +332,208 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
   };
 
   // ======= Export helpers =======
-// ===== Helpers de estilo para ExcelJS =====
-function applyHeaderStyle(cell: any) {
-  cell.font = { bold: true, color: { argb: "FF374151" } }; // gris oscuro
-  cell.alignment = { vertical: "middle", horizontal: "center" };
-  cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF3F4F6" } }; // gris claro
-  cell.border = {
-    top: { style: "thin", color: { argb: "FFE5E7EB" } },
-    bottom: { style: "thin", color: { argb: "FFE5E7EB" } },
-    left: { style: "thin", color: { argb: "FFE5E7EB" } },
-    right: { style: "thin", color: { argb: "FFE5E7EB" } },
-  };
-}
 
-function applyBodyBorder(cell: any) {
-  cell.border = {
-    top: { style: "thin", color: { argb: "FFE5E7EB" } },
-    bottom: { style: "thin", color: { argb: "FFE5E7EB" } },
-    left: { style: "thin", color: { argb: "FFE5E7EB" } },
-    right: { style: "thin", color: { argb: "FFE5E7EB" } },
-  };
-}
+  // Carga dinámica de exceljs + file-saver con fallback a CDN (para que NO falle el build en Vercel)
+  async function getExcelDeps() {
+    let WorkbookCtor: any;
+    let saveAsFn: (blob: Blob, name?: string) => void;
 
-function applyCategoryRowStyle(row: any) {
-  row.eachCell((cell: any) => {
-    cell.font = { bold: true };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9F9D9" } }; // verde suave
-    applyBodyBorder(cell);
-  });
-}
-
-// ===== Export superior con estilos =====
-async function exportTopToExcel() {
-  if (!rows.length) {
-    alert("No hay datos para exportar.");
-    return;
-  }
-  const wb = new Workbook();
-  const ws = wb.addWorksheet("Monthly");
-
-  // anchos de columnas aproximados a tu UI
-  ws.columns = [
-    { header: "Category / Item", key: "col1", width: 32 },
-    { header: "Item Number", key: "col2", width: 16 },
-    { header: "Qty (Current)", key: "col3", width: 16 },
-    { header: "Qty (Previous)", key: "col4", width: 16 },
-    { header: "Δ (Item)", key: "col5", width: 12 },
-    { header: "Δ (Category Total)", key: "col6", width: 20 },
-    { header: "Notes", key: "col7", width: 40 },
-  ];
-
-  // header
-  const header = ws.getRow(1);
-  header.values = ws.columns!.map((c) => c.header);
-  header.height = 22;
-  header.eachCell(applyHeaderStyle);
-
-  // body
-  let rIdx = 2;
-  let lastCat = "";
-  rows.forEach((r) => {
-    if (r.category_name !== lastCat) {
-      lastCat = r.category_name;
-      const catRow = ws.getRow(rIdx++);
-      catRow.getCell(1).value = r.category_name;
-      applyCategoryRowStyle(catRow);
+    try {
+      // @ts-ignore - puede no tener tipos en build
+      const m = await import("exceljs");
+      WorkbookCtor = m.Workbook;
+    } catch (_e) {
+      // @ts-ignore
+      const m = await import("https://esm.sh/exceljs@4.3.0");
+      WorkbookCtor = m.Workbook;
     }
 
-    const row = ws.getRow(rIdx++);
-    row.values = [
-      r.item_name,
-      r.item_number || "—",
-      r.qty_current_total,
-      r.qty_prev_total,
-      r.diff,
-      r.diff === 0 ? "—" : r.diff,
-      r.diff === 0 ? "—" : (r.notes || ""),
-    ];
-    // alineaciones
-    row.getCell(3).alignment = { horizontal: "right" };
-    row.getCell(4).alignment = { horizontal: "right" };
-    row.getCell(5).alignment = { horizontal: "right" };
-    row.getCell(6).alignment = { horizontal: "right" };
-    // colorear por diff (igual que en la vista)
-    const bg =
-      r.diff < 0
-        ? "FFFFE5E5"
-        : r.diff === 0
-        ? "FFE8F5E9"
-        : r.diff === r.qty_current_total
-        ? "FFE3F2FD"
-        : "FFFFF3E0";
-    if (r.diff !== 0) {
-      row.eachCell((cell: any) => {
-        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bg } };
-      });
+    try {
+      // @ts-ignore
+      const m2 = await import("file-saver");
+      saveAsFn = (m2.saveAs || m2.default) as typeof import("file-saver").saveAs;
+    } catch (_e) {
+      // @ts-ignore
+      const m2 = await import("https://esm.sh/file-saver@2.0.5");
+      saveAsFn = (m2.saveAs || m2.default) as any;
     }
-    row.eachCell(applyBodyBorder);
-  });
 
-  const buf = await wb.xlsx.writeBuffer();
-  const fileName = `Monthly_${new Date(0, month - 1).toLocaleString("en", {
-    month: "short",
-  })}_${year}.xlsx`;
-  saveAs(new Blob([buf]), fileName);
-}
-
-// ===== Export inferior con estilos =====
-async function exportBottomToExcel() {
-  if (!pastGrouped.length) {
-    alert("No hay inventarios pasados para exportar.");
-    return;
+    return { WorkbookCtor, saveAsFn };
   }
-  const cols = pastColumns.length
-    ? pastColumns
-    : makePastCols(pastCount, month, year);
 
-  const wb = new Workbook();
-  const ws = wb.addWorksheet("Past");
+  // ===== Helpers de estilo para ExcelJS =====
+  function applyHeaderStyle(cell: any) {
+    cell.font = { bold: true, color: { argb: "FF374151" } };
+    cell.alignment = { vertical: "middle", horizontal: "center" };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF3F4F6" } };
+    cell.border = {
+      top: { style: "thin", color: { argb: "FFE5E7EB" } },
+      bottom: { style: "thin", color: { argb: "FFE5E7EB" } },
+      left: { style: "thin", color: { argb: "FFE5E7EB" } },
+      right: { style: "thin", color: { argb: "FFE5E7EB" } },
+    };
+  }
 
-  const excelCols = [
-    { header: "Category / Item", width: 32 },
-    { header: "Item Number", width: 16 },
-    { header: "Qty (Up to date)", width: 18 },
-    ...cols.map((c) => ({ header: `Qty (${c.label})`, width: 14 })),
-    { header: "Grouped Notes", width: 60 },
-  ];
-  ws.columns = excelCols.map((c, i) => ({ header: c.header, key: `c${i}`, width: c.width }));
+  function applyBodyBorder(cell: any) {
+    cell.border = {
+      top: { style: "thin", color: { argb: "FFE5E7EB" } },
+      bottom: { style: "thin", color: { argb: "FFE5E7EB" } },
+      left: { style: "thin", color: { argb: "FFE5E7EB" } },
+      right: { style: "thin", color: { argb: "FFE5E7EB" } },
+    };
+  }
 
-  const header = ws.getRow(1);
-  header.values = excelCols.map((c) => c.header);
-  header.height = 22;
-  header.eachCell(applyHeaderStyle);
-
-  let rIdx = 2;
-  pastGrouped.forEach((grp) => {
-    // fila de categoría
-    const catRow = ws.getRow(rIdx++);
-    catRow.getCell(1).value = grp.category_name;
-    applyCategoryRowStyle(catRow);
-
-    // filas de items
-    grp.items.forEach((it) => {
-      const row = ws.getRow(rIdx++);
-      row.getCell(1).value = it.item_name;
-      row.getCell(2).value = it.item_number || "—";
-      row.getCell(3).value = it.qty_current;
-      it.qty_by_col.forEach((q, i) => row.getCell(4 + i).value = q);
-
-      // Notas: “Mes: texto, Mes: texto…”. El mes en negrita.
-      const richParts: any[] = [];
-      const parts = (it.notes_concat || "").split(", ").filter(Boolean);
-      if (!parts.length) {
-        row.getCell(4 + cols.length).value = "—";
-      } else {
-        parts.forEach((p, idx) => {
-          const [m, ...rest] = p.split(": ");
-          const text = rest.join(": ");
-          richParts.push(
-            { text: `${m}:`, font: { bold: true } },
-            { text: ` ${text}${idx < parts.length - 1 ? ", " : ""}` }
-          );
-        });
-        row.getCell(4 + cols.length).value = { richText: richParts };
-      }
-
-      // bordes + alineación
-      row.eachCell(applyBodyBorder);
-      row.getCell(3).alignment = { horizontal: "right" };
-      for (let i = 0; i < cols.length; i++) {
-        row.getCell(4 + i).alignment = { horizontal: "right" };
-      }
+  function applyCategoryRowStyle(row: any) {
+    row.eachCell((cell: any) => {
+      cell.font = { bold: true };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9F9D9" } };
+      applyBodyBorder(cell);
     });
-  });
+  }
 
-  const buf = await wb.xlsx.writeBuffer();
-  const fileName = `Monthly_Past_${new Date(0, month - 1).toLocaleString("en", {
-    month: "short",
-  })}_${year}.xlsx`;
-  saveAs(new Blob([buf]), fileName);
-}
+  // ===== Export superior con estilos (usa deps dinámicas) =====
+  async function exportTopToExcel() {
+    if (!rows.length) {
+      alert("No hay datos para exportar.");
+      return;
+    }
 
+    const { WorkbookCtor, saveAsFn } = await getExcelDeps();
+    const wb = new WorkbookCtor();
+    const ws = wb.addWorksheet("Monthly");
 
- 
+    ws.columns = [
+      { header: "Category / Item", key: "col1", width: 32 },
+      { header: "Item Number", key: "col2", width: 16 },
+      { header: "Qty (Current)", key: "col3", width: 16 },
+      { header: "Qty (Previous)", key: "col4", width: 16 },
+      { header: "Δ (Item)", key: "col5", width: 12 },
+      { header: "Δ (Category Total)", key: "col6", width: 20 },
+      { header: "Notes", key: "col7", width: 40 },
+    ];
+
+    const header = ws.getRow(1);
+    header.values = ws.columns!.map((c) => c.header);
+    header.height = 22;
+    header.eachCell(applyHeaderStyle);
+
+    let rIdx = 2;
+    let lastCat = "";
+    rows.forEach((r) => {
+      if (r.category_name !== lastCat) {
+        lastCat = r.category_name;
+        const catRow = ws.getRow(rIdx++);
+        catRow.getCell(1).value = r.category_name;
+        applyCategoryRowStyle(catRow);
+      }
+
+      const row = ws.getRow(rIdx++);
+      row.values = [
+        r.item_name,
+        r.item_number || "—",
+        r.qty_current_total,
+        r.qty_prev_total,
+        r.diff,
+        r.diff === 0 ? "—" : r.diff,
+        r.diff === 0 ? "—" : (r.notes || ""),
+      ];
+      row.getCell(3).alignment = { horizontal: "right" };
+      row.getCell(4).alignment = { horizontal: "right" };
+      row.getCell(5).alignment = { horizontal: "right" };
+      row.getCell(6).alignment = { horizontal: "right" };
+
+      const bg =
+        r.diff < 0
+          ? "FFFFE5E5"
+          : r.diff === 0
+          ? "FFE8F5E9"
+          : r.diff === r.qty_current_total
+          ? "FFE3F2FD"
+          : "FFFFF3E0";
+      if (r.diff !== 0) {
+        row.eachCell((cell: any) => {
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bg } };
+        });
+      }
+      row.eachCell(applyBodyBorder);
+    });
+
+    const buf = await wb.xlsx.writeBuffer();
+    const fileName = `Monthly_${new Date(0, month - 1).toLocaleString("en", {
+      month: "short",
+    })}_${year}.xlsx`;
+    saveAsFn(new Blob([buf]), fileName);
+  }
+
+  // ===== Export inferior con estilos (usa deps dinámicas) =====
+  async function exportBottomToExcel() {
+    if (!pastGrouped.length) {
+      alert("No hay inventarios pasados para exportar.");
+      return;
+    }
+
+    const cols = pastColumns.length ? pastColumns : makePastCols(pastCount, month, year);
+    const { WorkbookCtor, saveAsFn } = await getExcelDeps();
+    const wb = new WorkbookCtor();
+    const ws = wb.addWorksheet("Past");
+
+    const excelCols = [
+      { header: "Category / Item", width: 32 },
+      { header: "Item Number", width: 16 },
+      { header: "Qty (Up to date)", width: 18 },
+      ...cols.map((c) => ({ header: `Qty (${c.label})`, width: 14 })),
+      { header: "Grouped Notes", width: 60 },
+    ];
+    ws.columns = excelCols.map((c, i) => ({ header: c.header, key: `c${i}`, width: c.width }));
+
+    const header = ws.getRow(1);
+    header.values = excelCols.map((c) => c.header);
+    header.height = 22;
+    header.eachCell(applyHeaderStyle);
+
+    let rIdx = 2;
+    pastGrouped.forEach((grp) => {
+      const catRow = ws.getRow(rIdx++);
+      catRow.getCell(1).value = grp.category_name;
+      applyCategoryRowStyle(catRow);
+
+      grp.items.forEach((it) => {
+        const row = ws.getRow(rIdx++);
+        row.getCell(1).value = it.item_name;
+        row.getCell(2).value = it.item_number || "—";
+        row.getCell(3).value = it.qty_current;
+        it.qty_by_col.forEach((q, i) => (row.getCell(4 + i).value = q));
+
+        const richParts: any[] = [];
+        const parts = (it.notes_concat || "").split(", ").filter(Boolean);
+        if (!parts.length) {
+          row.getCell(4 + cols.length).value = "—";
+        } else {
+          parts.forEach((p, idx) => {
+            const [m, ...rest] = p.split(": ");
+            const text = rest.join(": ");
+            richParts.push(
+              { text: `${m}:`, font: { bold: true } },
+              { text: ` ${text}${idx < parts.length - 1 ? ", " : ""}` }
+            );
+          });
+          row.getCell(4 + cols.length).value = { richText: richParts };
+        }
+
+        row.eachCell(applyBodyBorder);
+        row.getCell(3).alignment = { horizontal: "right" };
+        for (let i = 0; i < cols.length; i++) {
+          row.getCell(4 + i).alignment = { horizontal: "right" };
+        }
+      });
+    });
+
+    const buf = await wb.xlsx.writeBuffer();
+    const fileName = `Monthly_Past_${new Date(0, month - 1).toLocaleString("en", {
+      month: "short",
+    })}_${year}.xlsx`;
+    saveAsFn(new Blob([buf]), fileName);
+  }
 
   const renderNotesPretty = (notesConcat: string) => {
     if (!notesConcat) return "—";
@@ -695,7 +714,7 @@ async function exportBottomToExcel() {
                 {(pastColumns.length ? pastColumns : makePastCols(pastCount, month, year)).map(
                   (c) => (
                     <th key={`${c.year}-${c.month}`} className="right">
-                     {c.label}
+                      {c.label}
                     </th>
                   )
                 )}
@@ -710,9 +729,7 @@ async function exportBottomToExcel() {
                     <td className="right"></td>
                     {(pastColumns.length ? pastColumns : makePastCols(pastCount, month, year)).map(
                       (_c, idx) => (
-                        <td key={`c-${idx}`} className="right">
-                          
-                        </td>
+                        <td key={`c-${idx}`} className="right"></td>
                       )
                     )}
                     <td></td>
