@@ -395,7 +395,7 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={7} className="empty">
-                  {loading ? "Cargando..." : "No hay datos para mostrar."}
+                  {loading ? "Loading..." : "No data to show."}
                 </td>
               </tr>
             ) : (
@@ -488,7 +488,7 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
                 <th className="right">Qty (Up to date)</th>
                 {pastColumns.map((c) => (
                   <th key={`${c.year}-${c.month}`} className="right">
-                    Qty ({c.label})
+                     {c.label}
                   </th>
                 ))}
                 <th>Grouped Notes</th>
