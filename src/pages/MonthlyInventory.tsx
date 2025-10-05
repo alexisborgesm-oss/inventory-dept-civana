@@ -43,8 +43,11 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
       loadCurrentTotals();
     }
   }, [departmentId]);
-
-  async function loadCurrentTotals() {
+  useEffect(() => {
+  loadCurrentTotals();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [month, year]);
+async function loadCurrentTotals() {
   const deptId = user.role === "super_admin" ? Number(departmentId) : Number(user.department_id);
   if (!deptId) return;
 
@@ -52,13 +55,7 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
   setPastTable([]);
 
   try {
-    // 🔹 1) Cargar catálogos de una vez y asegurar que están completos
-    const { data: areasData, error: areasErr } = await supabase
-      .from("areas")
-      .select("id, department_id")
-      .eq("department_id", deptId);
-    if (areasErr) throw areasErr;
-
+    // 1) Catálogos
     const { data: itemsData, error: itemsErr } = await supabase
       .from("items")
       .select("id, name, category_id, article_number");
@@ -69,82 +66,86 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
       .select("id, name");
     if (catsErr) throw catsErr;
 
-    // Guardar catálogos en memoria
     setItems(itemsData || []);
     setCategories(catsData || []);
 
+    // 2) Áreas del depto
+    const { data: areasData, error: areasErr } = await supabase
+      .from("areas")
+      .select("id, department_id")
+      .eq("department_id", deptId);
+    if (areasErr) throw areasErr;
+
     const areaIds = (areasData || []).map((a: any) => a.id);
-    if (areaIds.length === 0) {
-      setRows([]);
-      return;
+
+    // 3) Totales actuales (suma del último record de CADA área)
+    let currentTotals = new Map<number, number>(); // item_id -> qty
+    if (areaIds.length) {
+      const recPromises = areaIds.map((areaId: number) =>
+        supabase
+          .from("records")
+          .select("id, area_id, inventory_date, created_at")
+          .eq("area_id", areaId)
+          .order("inventory_date", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(1)
+      );
+      const recResults = await Promise.all(recPromises);
+      const latestRecords = recResults
+        .map((r) => (r.error || !r.data?.length ? null : r.data[0]))
+        .filter(Boolean) as { id: number }[];
+
+      if (latestRecords.length) {
+        const recordIds = latestRecords.map((r) => r.id);
+        const { data: riData, error: riErr } = await supabase
+          .from("record_items")
+          .select("record_id, item_id, qty");
+        if (riErr) throw riErr;
+
+        const riRows = (riData || []).filter((r: any) => recordIds.includes(r.record_id));
+        riRows.forEach((r: any) => {
+          currentTotals.set(r.item_id, (currentTotals.get(r.item_id) || 0) + (r.qty || 0));
+        });
+      }
     }
 
-    // 🔹 2) Buscar el último record de cada área
-    const recPromises = areaIds.map((areaId: number) =>
-      supabase
-        .from("records")
-        .select("id, area_id, inventory_date, created_at")
-        .eq("area_id", areaId)
-        .order("inventory_date", { ascending: false })
-        .order("created_at", { ascending: false })
-        .limit(1)
-    );
-    const recResults = await Promise.all(recPromises);
-    const latestRecords = recResults
-      .map((r) => (r.error || !r.data?.length ? null : r.data[0]))
-      .filter(Boolean) as { id: number }[];
-
-    if (latestRecords.length === 0) {
-      setRows([]);
-      return;
-    }
-
-    // 🔹 3) Traer items de esos records
-    const recordIds = latestRecords.map((r) => r.id);
-    const { data: riData, error: riErr } = await supabase
-      .from("record_items")
-      .select("record_id, item_id, qty");
-    if (riErr) throw riErr;
-
-    const riRows = (riData || []).filter((r: any) => recordIds.includes(r.record_id));
-
-    // Sumar cantidades totales por item
-    const totals = new Map<number, number>();
-    riRows.forEach((r: any) => {
-      totals.set(r.item_id, (totals.get(r.item_id) || 0) + (r.qty || 0));
-    });
-
-    // 🔹 4) Mes anterior inmediato
+    // 4) Mes anterior inmediato (previo)
     const prevM = month === 1 ? 12 : month - 1;
     const prevY = month === 1 ? year - 1 : year;
-
-    const { data: prevData } = await supabase
+    const { data: prevData, error: prevErr } = await supabase
       .from("monthly_inventories")
       .select("item_id, qty_total")
       .eq("department_id", deptId)
       .eq("month", prevM)
       .eq("year", prevY);
+    if (prevErr) throw prevErr;
 
-    const prevMap = new Map<number, number>();
-    (prevData || []).forEach((r: any) => prevMap.set(r.item_id, r.qty_total || 0));
+    const prevTotals = new Map<number, number>();
+    (prevData || []).forEach((r: any) => prevTotals.set(r.item_id, r.qty_total || 0));
 
-    // 🔹 5) Armar filas con nombres reales
-    const built = Array.from(totals.entries()).map(([item_id, qty]) => {
-      const it = itemsData?.find((i) => i.id === item_id);
-      const category_id = it?.category_id ?? 0;
-      const prev = prevMap.get(item_id) ?? 0;
+    // 5) Unión de ítems: actuales ∪ previos (para que SIEMPRE haya filas)
+    const itemIds = new Set<number>([
+      ...Array.from(currentTotals.keys()),
+      ...Array.from(prevTotals.keys()),
+    ]);
 
+    // 6) Construcción de filas
+    const catName = (id: number) => (catsData || []).find((c) => c.id === id)?.name ?? "—";
+    const built: MonthlyRow[] = Array.from(itemIds).map((item_id) => {
+      const it = (itemsData || []).find((i) => i.id === item_id);
+      const current = currentTotals.get(item_id) ?? 0;
+      const previous = prevTotals.get(item_id) ?? 0;
       return {
-        category_id,
-        category_name: catsData?.find((c) => c.id === category_id)?.name ?? "Sin categoría",
+        category_id: it?.category_id ?? 0,
+        category_name: catName(it?.category_id ?? 0),
         item_id,
-        item_name: it?.name ?? `Artículo ${item_id}`,
-        item_number: it?.article_number ?? "—",
-        qty_current_total: qty,
-        qty_prev_total: prev,
-        diff: qty - prev,
+        item_name: it?.name ?? `Item ${item_id}`,
+        item_number: it?.article_number ?? null,
+        qty_current_total: current,
+        qty_prev_total: previous,
+        diff: current - previous,
         notes: "",
-      } as MonthlyRow;
+      };
     });
 
     built.sort((a, b) =>
@@ -154,11 +155,15 @@ const MonthlyInventory: React.FC<{ user: User }> = ({ user }) => {
     setRows(built);
   } catch (err) {
     console.error(err);
-    alert('Error cargando totales actuales. Revisa que existan y tengan datos las tablas "areas", "records" y "record_items".');
+    alert(
+      'Error cargando datos. Revisa que existan "items", "categories", "areas", "records/record_items" y "monthly_inventories".'
+    );
   } finally {
     setLoading(false);
   }
 }
+
+ 
 
 
   function getColor(diff: number, current: number): string {
