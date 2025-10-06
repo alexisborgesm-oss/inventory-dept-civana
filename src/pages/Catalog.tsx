@@ -263,7 +263,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
                   ...payload,
                   category_id: cid,
                   // Solo para visualización: derive is_valuable si la categoría se llama 'Tagged_Item'
-                  is_valuable: cat ? (String(cat.name).toLowerCase() === 'tagged_Item') : false
+                  is_valuable: cat ? (String(cat.name).toLowerCase() === 'tagged_item') : false
                 })
               }}
             >
