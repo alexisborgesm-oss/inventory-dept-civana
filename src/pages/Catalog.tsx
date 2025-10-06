@@ -211,7 +211,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
       <section>
         <h4>Items</h4>
         <button className="btn btn-primary" onClick={()=>openModal('item', { name:'', category_id:null, unit:'', vendor:'', is_valuable:false, article_number:null })}>New item</button>
-        <table><thead><tr><th>Name</th><th>Category</th><th>Unit</th><th>Vendor</th><th>Valuable</th><th>Article #</th><th>Actions</th></tr></thead><tbody>
+        <table><thead><tr><th>Name</th><th>Category</th><th>Unit</th><th>Vendor</th><th>Tagged Item</th><th>Article #</th><th>Actions</th></tr></thead><tbody>
           {items.map(i=>(
             <tr key={i.id}>
               <td>{i.name}</td>
