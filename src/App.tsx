@@ -9,6 +9,10 @@ import Catalog from './pages/Catalog'
 import Threshold from './pages/Threshold'
 import MonthlyInventory from './pages/MonthlyInventory'
 import AdminCatalog from './pages/AdminCatalog'
+import ChangePassword from "./components/ChangePassword";
+
+// ...
+<ChangePassword />
 
 type UserRow = { id:string, username:string, role:'super_admin'|'admin'|'standard', department_id: number | null }
 
