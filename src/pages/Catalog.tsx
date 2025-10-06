@@ -68,7 +68,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
         return
       }
 
-      data = { name, category_id, unit, vendor, article_number }
+      data = { name, category_id, unit, vendor, article_number,isVal}
     } else {
       // Otras entidades conservan tu comportamiento original
       data = { ...payload }
