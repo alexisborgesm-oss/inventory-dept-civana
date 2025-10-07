@@ -10,15 +10,21 @@ import Threshold from './pages/Threshold'
 import MonthlyInventory from './pages/MonthlyInventory'
 import AdminCatalog from './pages/AdminCatalog'
 import ChangePassword from "./components/ChangePassword";
-
-// ...
-<ChangePassword />
+import { Modal } from './components/Modal'
 
 type UserRow = { id:string, username:string, role:'super_admin'|'admin'|'standard', department_id: number | null }
 
 export default function App(){
   const [user, setUser] = useState<UserRow | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+
+  // --- estado modal cambio de contraseña ---
+  const [pwdOpen, setPwdOpen] = useState(false)
+  const [pwdCur, setPwdCur] = useState('')
+  const [pwdNew, setPwdNew] = useState('')
+  const [pwdNew2, setPwdNew2] = useState('')
+  const [pwdLoading, setPwdLoading] = useState(false)
+
   const navigate = useNavigate()
 
   const idleMin = Number(import.meta.env.VITE_SESSION_IDLE_MINUTES || 15)
@@ -29,7 +35,6 @@ export default function App(){
   }, idleMin)
 
   useEffect(()=>{
-    // restore from localStorage
     const raw = localStorage.getItem('inv_user')
     if(raw){
       try{ setUser(JSON.parse(raw)) }catch{}
@@ -39,12 +44,65 @@ export default function App(){
   function doLogout(){
     localStorage.removeItem('inv_user')
     setUser(null)
+    setPwdOpen(false)
+    setPwdCur(''); setPwdNew(''); setPwdNew2(''); setPwdLoading(false)
     navigate('/')
+  }
+
+  async function handleChangePassword(){
+    if(!user) return
+    if(!pwdCur || !pwdNew || !pwdNew2){
+      alert('Please complete all fields.')
+      return
+    }
+    if(pwdNew !== pwdNew2){
+      alert('New password and confirmation do not match.')
+      return
+    }
+    if(pwdNew.length < 6){
+      alert('New password must be at least 6 characters.')
+      return
+    }
+    setPwdLoading(true)
+    try{
+      // 1) Verificar contraseña actual
+      const { data: found, error: e1 } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', user.id)
+        .eq('password', pwdCur)
+        .maybeSingle()
+      if(e1) throw e1
+      if(!found){
+        alert('Current password is incorrect.')
+        return
+      }
+      // 2) Actualizar contraseña
+      const { error: e2 } = await supabase
+        .from('users')
+        .update({ password: pwdNew })
+        .eq('id', user.id)
+      if(e2) throw e2
+
+      alert('Password updated successfully.')
+      setPwdOpen(false)
+      setPwdCur(''); setPwdNew(''); setPwdNew2('')
+    }catch(err:any){
+      alert(err?.message || String(err))
+    }finally{
+      setPwdLoading(false)
+    }
   }
 
   return (
     <div className="app">
-      <Nav user={user} onLogout={doLogout} menuOpen={menuOpen} setMenuOpen={setMenuOpen} />
+      <Nav
+        user={user}
+        onLogout={doLogout}
+        menuOpen={menuOpen}
+        setMenuOpen={setMenuOpen}
+        onOpenChangePassword={()=> setPwdOpen(true)}
+      />
       <div className="container">
         {!user ? <Login onLogin={setUser}/> :
           <Routes>
@@ -59,11 +117,45 @@ export default function App(){
           </Routes>
         }
       </div>
+
+      {/* Modal Cambiar contraseña (responsive, usa tu Modal existente) */}
+      <Modal
+        open={pwdOpen}
+        onClose={()=>{ if(!pwdLoading) setPwdOpen(false) }}
+        title="Change password"
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={()=> setPwdOpen(false)} disabled={pwdLoading}>Cancel</button>
+            <button className="btn btn-primary" onClick={handleChangePassword} disabled={pwdLoading}>
+              {pwdLoading ? 'Saving…' : 'Save'}
+            </button>
+          </>
+        }
+      >
+        <div className="field">
+          <label>Current password</label>
+          <input className="input" type="password" value={pwdCur} onChange={e=>setPwdCur(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>New password</label>
+          <input className="input" type="password" value={pwdNew} onChange={e=>setPwdNew(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>Confirm new password</label>
+          <input className="input" type="password" value={pwdNew2} onChange={e=>setPwdNew2(e.target.value)} />
+        </div>
+      </Modal>
     </div>
   )
 }
 
-const Nav: React.FC<{user:UserRow|null,onLogout:()=>void,menuOpen:boolean,setMenuOpen:(b:boolean)=>void}> = ({user,onLogout,menuOpen,setMenuOpen}) => {
+const Nav: React.FC<{
+  user:UserRow|null,
+  onLogout:()=>void,
+  menuOpen:boolean,
+  setMenuOpen:(b:boolean)=>void,
+  onOpenChangePassword:()=>void
+}> = ({user,onLogout,menuOpen,setMenuOpen,onOpenChangePassword}) => {
   return (
     <nav className="navbar">
       <div className="brand">Inventory</div>
@@ -71,7 +163,17 @@ const Nav: React.FC<{user:UserRow|null,onLogout:()=>void,menuOpen:boolean,setMen
         {user && <>
           <Link to="/">Create Records</Link>
           <Link to="/inventory">Inventory</Link>
-          <span className="user">Signed in: {user.username}</span>
+
+          {/* Nombre clickeable para abrir modal de contraseña */}
+          <button
+            className="user"
+            style={{ background:'transparent', border:'none', cursor:'pointer', padding:0 }}
+            onClick={onOpenChangePassword}
+            aria-label="Change password"
+          >
+            Signed in: {user.username}
+          </button>
+
           <div className={menuOpen ? 'dropdown open' : 'dropdown'}>
             <button className="btn btn-secondary" onClick={()=>setMenuOpen(!menuOpen)}>More ▾</button>
             <div className="dropdown-menu" onClick={()=>setMenuOpen(false)}>
