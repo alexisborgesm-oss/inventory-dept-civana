@@ -30,8 +30,7 @@ body{
 /* Navbar */
 .navbar{
   position:sticky; top:0; z-index:20;
-  display:flex; align-items:center; justify-content:space-between;
-  gap:.5rem;
+  display:flex; align-items:center; justify-content:space-between; gap:.5rem;
   padding:.75rem 1rem;
   background:var(--obsidian);
   color:var(--soft-white);
@@ -39,16 +38,16 @@ body{
 }
 .navbar .brand{ font-weight:600; letter-spacing:.5px }
 .navbar a, .navbar button, .navbar .user{
-  color:var(--soft-white); text-decoration:none; margin-left:.75rem;
-  padding:.45rem .75rem; border-radius:10px; border:1px solid transparent;
+  color:var(--soft-white); text-decoration:none;
+  margin-left:.75rem; padding:.45rem .75rem;
+  border-radius:10px; border:1px solid transparent;
   transition:var(--transition);
   white-space:nowrap;
 }
 .navbar a:hover, .navbar button:hover{
   background:rgba(205,232,214,.15);
   border-color:var(--green);
-  text-decoration:underline;
-  text-underline-offset:3px;
+  text-decoration:underline; text-underline-offset:3px;
 }
 
 /* Dropdown */
@@ -65,12 +64,11 @@ body{
 .dropdown-menu a:hover{ background:rgba(205,232,214,.12) }
 
 /* Layout */
-.container{ width:100%; max-width:1200px; margin:1rem auto; padding:0 1rem }
+.container{ width:100%; max-width:1200px; margin:1rem auto; padding:0 1rem; overflow:visible }
 .card{
   background:var(--soft-white); border-radius:var(--radius);
   box-shadow:var(--shadow); padding:1rem; margin-bottom:1rem;
-  /* permite scroll horizontal de cualquier contenido ancho (tablas, filas de filtros, etc.) */
-  overflow-x:auto;
+  overflow-x:auto; /* tablancha -> scrollable */
 }
 .dark .card{ background:var(--obsidian) }
 
@@ -85,45 +83,32 @@ body{
 
 /* Forms */
 .field{ display:flex; flex-direction:column; margin-bottom:.75rem; min-width:0 }
-.field label{ font-weight:600; margin-bottom:.35rem; line-height:1.2 }
+.field label{ font-weight:600; margin-bottom:.35rem; line-height:1.2; white-space:normal }
 .input, .select{
   padding:.6rem .7rem; border-radius:12px;
-  border:1px solid var(--green);
-  background:#fff;
-  transition:var(--transition);
-  min-width:0; /* evita desbordes en contenedores estrechos */
-  width:100%;
-  max-width:100%;
+  border:1px solid var(--green); background:#fff;
+  transition:var(--transition); min-width:0; width:100%; max-width:100%;
 }
 .input::placeholder{ color:#b8b8b8 }
 .input:focus, .select:focus{ outline:none; border-color:#98cfae; box-shadow:0 0 0 3px rgba(205,232,214,.35) }
 .dark .input, .dark .select{ background:var(--obsidian-2); color:var(--soft-white) }
 
-/* Asegura que los controles en filas muy apretadas no se pisen */
-.card :where(input,select,button){
-  min-height:40px;
-  line-height:1.1;
-}
+/* Evita que controles se pisen incluso en contenedores estrechos */
+.card :where(input,select,button){ min-height:40px; line-height:1.1 }
 
-/* Tables: siempre 100% y con desplazamiento horizontal cuando no quepa. */
-table{
-  border-collapse:collapse;
-  width:100%;
-  max-width:100%;
-  /* en móviles convertimos la tabla en “scrollable” sin romper su estructura */
-  display:table;
-}
+/* Tables -> 100% y scroll horizontal cuando no quepan */
+table{ border-collapse:collapse; width:100%; max-width:100%; display:table }
 th, td{
-  text-align:left; padding:.55rem .6rem; border-bottom:1px solid rgba(0,0,0,.08);
+  text-align:left; padding:.55rem .6rem;
+  border-bottom:1px solid rgba(0,0,0,.08);
   vertical-align:middle;
-  white-space:nowrap; /* evita quiebres feos en cabeceras cortas */
 }
 th{ font-weight:600; user-select:none; cursor:pointer }
 tr:hover td{ background:rgba(205,232,214,.08) }
 
 /* Modal */
 .modal-backdrop{
-  position:fixed; inset:0; padding:1rem; /* padding ayuda a centrar en pantallas angostas */
+  position:fixed; inset:0; padding:1rem;
   background:rgba(46,46,46,.55);
   display:flex; align-items:center; justify-content:center;
   animation:fade .2s ease;
@@ -138,49 +123,50 @@ tr:hover td{ background:rgba(205,232,214,.08) }
 @keyframes fade{ from{opacity:0} to{opacity:1} }
 @keyframes slideUp{ from{ transform:translateY(8px); opacity:.9 } to{ transform:translateY(0); opacity:1 } }
 
-/* ========= Responsive tweaks ========= */
+/* ================== Responsive ================== */
 
-/* Todo: que el contenedor no colapse y permita scroll horizontal si algo se desborda */
-.container{ overflow:visible }
-
-/* >= Tablet: sin cambios grandes, pero permitimos que las celdas rompan cuando sea necesario */
-@media (max-width: 1024px){
+/* Tablet ↓ : permite que celdas rompan texto */
+@media (max-width:1024px){
   th, td{ white-space:normal }
 }
 
-/* Móvil: pila todo en una columna, evita solapamientos y permite scroll en tablas */
-@media (max-width: 768px){
+/* Móvil: apilar formularios/controles de cabeceras en una sola columna */
+@media (max-width:768px){
   .navbar{ flex-wrap:wrap; gap:.5rem }
   .navbar .right{ width:100%; display:flex; gap:.5rem; flex-wrap:wrap; justify-content:flex-end }
   .navbar a, .navbar button, .navbar .user{ margin-left:0 }
 
-  /* En tarjetas con filas de filtros/inputs, que todo ocupe el 100% y haga wrap */
-  .card{ overflow-x:auto }
-  .card > *{ min-width:0 }
+  /* Heurística de “auto-stack” para la 1ª tarjeta (tus filtros de Create Records):
+     - si un título (<h3> o <h4>) va seguido de un bloque con controles,
+       lo volvemos grid de 1 columna para que TODO se apile ordenado. */
+  .card h3 + *, .card h4 + *{
+    display:grid !important;
+    grid-template-columns:1fr !important;
+    gap:.6rem !important;
+  }
 
-  /* Asegura que cualquier fila horizontal con muchos controles se parta en varias líneas */
-  .card :where(.row, .controls, .toolbar){ display:flex; flex-wrap:wrap; gap:.5rem }
+  /* Cualquier fila horizontal dentro de las tarjetas se parte en varias líneas */
+  .card :where(.row, .controls, .toolbar, form){ display:flex; flex-wrap:wrap; gap:.5rem }
 
-  /* Inputs/Selects/Buttons al 100% de ancho en móvil */
+  /* Inputs/Selects/Buttons al 100% en móvil */
   .card :where(input, select, button){ width:100% }
 
-  /* Tablas: convertir en scroll horizontal limpio */
+  /* Tablas scrollables, sin romper estructura */
   .card table{
-    display:block;
-    width:100%;
-    overflow-x:auto;
-    -webkit-overflow-scrolling:touch;
-    border-spacing:0;
+    display:block; width:100%; overflow-x:auto;
+    -webkit-overflow-scrolling:touch; border-spacing:0;
   }
   .card thead, .card tbody{ display:table; width:100% }
   .card tr{ display:table; width:100% }
-  th, td{ white-space:nowrap } /* scroll horizontal en vez de saltos raros */
+  th, td{ white-space:nowrap } /* preferimos scroll horizontal a saltos feos */
 }
 
-/* Extra pequeño (teléfonos angostos ~360px) */
-@media (max-width: 420px){
+/* Muy angosto (≤420px): reducimos tamaños y apretamos paddings */
+@media (max-width:420px){
+  html{ font-size:15px }
   .navbar .brand{ font-size:.95rem }
   .navbar a, .navbar button, .navbar .user{ padding:.35rem .55rem; font-size:.9rem }
   .btn{ padding:.5rem .75rem }
   .modal{ width:94vw }
+  th, td{ padding:.45rem .5rem; font-size:.95rem }
 }
