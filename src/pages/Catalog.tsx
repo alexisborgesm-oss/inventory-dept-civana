@@ -11,7 +11,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
   const [cats, setCats] = useState<any[]>([])
   const [items, setItems] = useState<any[]>([])
 
-  // NUEVO: selección de departamento (solo super_admin)
+  // Selección de departamento (solo super_admin)
   const [selectedDeptId, setSelectedDeptId] = useState<number | null>(null)
 
   // generic edit modal
@@ -29,24 +29,21 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
   useEffect(()=>{ refresh() },[selectedDeptId])
 
   async function refresh(){
-    // Cargar departamentos siempre para super_admin (para los radios)
+    // Departamentos (para radios de super_admin)
     if(user.role==='super_admin'){
       const { data: d } = await supabase.from('departments').select('*').order('id')
       setDeps(d||[])
     }
 
-    // Categorías (no dependen del depto)
-    const { data: c } = await supabase.from('categories').select('*').order('id')
-    setCats(c||[])
-
-    // Áreas
+    // Áreas + Categorías + Ítems según rol/departamento
     if(user.role==='super_admin'){
-      // si NO hay departamento seleccionado, no mostramos áreas ni items
+      // Sin depto seleccionado: limpiar listados
       if(!selectedDeptId){
-        setAreas([])
-        setItems([])
+        setAreas([]); setCats([]); setItems([])
         return
       }
+
+      // Áreas del depto seleccionado
       const { data: a } = await supabase
         .from('areas')
         .select('*')
@@ -54,7 +51,15 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
         .order('id')
       setAreas(a||[])
 
-      // Items filtrados por depto: ítems asignados a alguna área de este departamento
+      // Categorías del depto seleccionado (requiere categories.department_id)
+      const { data: c } = await supabase
+        .from('categories')
+        .select('*')
+        .eq('department_id', selectedDeptId)
+        .order('id')
+      setCats(c||[])
+
+      // Ítems asociados a Áreas del depto (vía area_items)
       const areaIds = (a||[]).map((r:any)=>r.id)
       if(areaIds.length){
         const { data: ai } = await supabase
@@ -75,12 +80,44 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
       }else{
         setItems([])
       }
-    }else{
-      // admin / standard: comportamiento previo (no modifico nada más)
-      const { data: a } = await supabase.from('areas').select('*').order('id')
+
+    } else {
+      // ADMIN/STANDARD: filtrar por su departamento
+      const deptId = user.department_id ?? null
+
+      // Áreas del propio depto
+      let qAreas = supabase.from('areas').select('*')
+      if(deptId) qAreas = qAreas.eq('department_id', deptId)
+      const { data: a } = await qAreas.order('id')
       setAreas(a||[])
-      const { data: i } = await supabase.from('items_with_flags').select('*').order('id')
-      setItems(i||[])
+
+      // Categorías del propio depto (requiere categories.department_id)
+      let qCats = supabase.from('categories').select('*')
+      if(deptId) qCats = qCats.eq('department_id', deptId)
+      const { data: c } = await qCats.order('id')
+      setCats(c||[])
+
+      // Ítems vinculados a áreas de su depto
+      const areaIds = (a||[]).map((r:any)=>r.id)
+      if(areaIds.length){
+        const { data: ai } = await supabase
+          .from('area_items')
+          .select('item_id')
+          .in('area_id', areaIds)
+        const itemIds = Array.from(new Set((ai||[]).map((r:any)=>r.item_id)))
+        if(itemIds.length){
+          const { data: i } = await supabase
+            .from('items_with_flags')
+            .select('*')
+            .in('id', itemIds)
+            .order('id')
+          setItems(i||[])
+        }else{
+          setItems([])
+        }
+      }else{
+        setItems([])
+      }
     }
   }
 
@@ -105,7 +142,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
       const vendor = String(payload.vendor ?? '').trim() || null
       const article_number = String(payload.article_number ?? '').trim() || null
 
-      // Validación UX: si la categoría elegida es 'Tagged_Item', exigir article_number
+      // Si categoría es Tagged_Item => exigir article_number y marcar is_valuable
       const cat = (cats||[]).find((c:any)=> c.id === category_id)
       const is_valuable = !!(cat && String(cat.name).toLowerCase() === 'tagged_item')
       if(is_valuable && !article_number){
@@ -114,16 +151,28 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
       }
 
       data = { name, category_id, unit, vendor, article_number, is_valuable }
-    } else {
-      // Otras entidades conservan tu comportamiento original
+
+    } else if (entity==='area'){
       data = { ...payload }
-      if(entity==='area' && user.role!=='super_admin'){
+      if(user.role!=='super_admin'){
         data.department_id = user.department_id
       }
-      // Si es super_admin y hay dept seleccionado, al crear un área la ligamos ahí por defecto
-      if(entity==='area' && user.role==='super_admin' && selectedDeptId){
+      if(user.role==='super_admin' && selectedDeptId){
         data.department_id = selectedDeptId
       }
+
+    } else if (entity==='category'){
+      // Agregar department_id a la categoría
+      data = { ...payload }
+      if(user.role==='super_admin'){
+        data.department_id = selectedDeptId ?? null
+      } else {
+        data.department_id = user.department_id
+      }
+
+    } else {
+      // department (sin cambios)
+      data = { ...payload }
     }
 
     const { error } = payload.id
@@ -145,21 +194,21 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
   // ===== Linking UI =====
   async function openLinkModal(item:any){
     setLinkItem(item)
-    // departments selector (only for super_admin) controls what areas we display
+
+    // depto actual para áreas del modal
     let currentDept = user.department_id
     if(user.role==='super_admin'){
-      // Usar el depto seleccionado en radios si existe
       if(selectedDeptId){
         currentDept = selectedDeptId
         setLinkDeptId(selectedDeptId)
       }else{
-        // fallback al primero si no hay seleccionado (no debería pasar porque no mostramos items hasta seleccionar)
         const { data: d } = await supabase.from('departments').select('id').order('id').limit(1)
         currentDept = d && d.length ? d[0].id : null
         setLinkDeptId(currentDept || '')
       }
     }
-    // Load areas para el depto elegido (o todas si admin)
+
+    // Áreas del depto elegido (o del admin)
     let q = supabase.from('areas').select('id,name,department_id').order('id')
     if(user.role!=='super_admin' && user.department_id) q = q.eq('department_id', user.department_id)
     if(user.role==='super_admin' && currentDept) q = q.eq('department_id', currentDept as number)
@@ -167,11 +216,10 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
     if(ea){ alert(ea.message); return }
     setLinkAreas(a||[])
 
-    // Load existing links para este item
+    // Links existentes del ítem
     const { data: links, error: el } = await supabase.from('area_items').select('area_id').eq('item_id', item.id)
     if(el){ alert(el.message); return }
     const set = new Set<number>((links||[]).map(r=>r.area_id))
-    // Si es Tagged_Item, normaliza a 1 selección como máximo
     if (item?.is_valuable && set.size > 1) {
       const first = Array.from(set)[0]
       set.clear()
@@ -185,17 +233,14 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
     if(!linkItem) return
     if(!confirm('Save area assignments for this item?')) return
 
-    // UX: evitar mandar varias áreas si es Tagged_Item
     if (linkItem?.is_valuable && checkedAreas.size > 1) {
       alert('A Tagged_Item item can be assigned to only one area.')
       return
     }
 
-    // current links in DB
     const { data: current } = await supabase.from('area_items').select('area_id').eq('item_id', linkItem.id)
     const currentSet = new Set<number>((current||[]).map(r=>r.area_id))
 
-    // compute adds/removes
     const toAdd = Array.from(checkedAreas).filter(id=> !currentSet.has(id)).map(area_id=> ({ area_id, item_id: linkItem.id }))
     const toRemove = Array.from(currentSet).filter(id=> !checkedAreas.has(id))
 
@@ -212,11 +257,8 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
     setLinkOpen(false)
   }
 
-  const filteredAreasForTable = useMemo(()=>{
-    return areas
-  },[areas])
+  const filteredAreasForTable = useMemo(()=>areas,[areas])
 
-  // ======== Mapa id -> nombre de categoría para mostrar en tablas ========
   const catNameById = useMemo<Record<number, string>>(
     () => Object.fromEntries((cats||[]).map((c:any)=>[c.id, c.name])) as Record<number,string>,
     [cats]
@@ -226,7 +268,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
     <div className="card">
       <h3 style={{marginTop:0}}>Catalog</h3>
 
-      {/* ===== Radios de departamentos (solo super_admin) ===== */}
+      {/* Radios de departamentos (solo super_admin) */}
       {user.role==='super_admin' && (
         <section style={{marginBottom:16}}>
           <h4>Departments</h4>
@@ -243,7 +285,6 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
               </label>
             ))}
           </div>
-          {/* Botones de gestión de departamentos (sin cambios) */}
           <button className="btn btn-primary" onClick={()=>openModal('department', { name:'' })}>New department</button>
           <table style={{marginTop:8}}>
             <thead><tr><th>Name</th><th>Actions</th></tr></thead>
@@ -262,17 +303,14 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
         </section>
       )}
 
-      {/* ===== Áreas (solo mostrar si:
-            - admin (como antes), o
-            - super_admin Y hay un dept seleccionado) ===== */}
-      { (user.role!=='super_admin' || selectedDeptId) && (
+      {/* Áreas (super_admin con dept seleccionado, o admin siempre) */}
+      {(user.role!=='super_admin' || selectedDeptId) && (
         <section>
           <h4>Areas</h4>
           <button
             className="btn btn-primary"
             onClick={()=>openModal('area', {
               name:'',
-              // si es super_admin y hay dept seleccionado, lo usamos
               department_id: user.role==='super_admin'
                 ? (selectedDeptId ?? null)
                 : user.department_id
@@ -295,27 +333,38 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
         </section>
       )}
 
-      {/* ===== Categorías (siempre) ===== */}
-      <section>
-        <h4>Categories</h4>
-        <button className="btn btn-primary" onClick={()=>openModal('category', { name:'' })}>New category</button>
-        <table><thead><tr><th>Name</th><th>Actions</th></tr></thead><tbody>
-          {cats.map(c=>(
-            <tr key={c.id}>
-              <td>{c.name}</td>
-              <td style={{display:'flex',gap:8}}>
-                <button className="btn btn-secondary" onClick={()=>openModal('category', c)}>Modify</button>
-                <button className="btn btn-danger" onClick={()=>remove('category', c.id)}>Delete</button>
-              </td>
-            </tr>
-          ))}
-        </tbody></table>
-      </section>
+      {/* Categorías (filtradas por depto seleccionado o depto del admin) */}
+      {(user.role!=='super_admin' || selectedDeptId) && (
+        <section>
+          <h4>Categories</h4>
+          <button
+            className="btn btn-primary"
+            onClick={()=>openModal('category', {
+              name:'',
+              department_id: user.role==='super_admin'
+                ? (selectedDeptId ?? null)
+                : user.department_id
+            })}
+          >
+            New category
+          </button>
+          <table><thead><tr><th>Name</th><th>Department</th><th>Actions</th></tr></thead><tbody>
+            {cats.map(c=>(
+              <tr key={c.id}>
+                <td>{c.name}</td>
+                <td>{c.department_id ?? ''}</td>
+                <td style={{display:'flex',gap:8}}>
+                  <button className="btn btn-secondary" onClick={()=>openModal('category', c)}>Modify</button>
+                  <button className="btn btn-danger" onClick={()=>remove('category', c.id)}>Delete</button>
+                </td>
+              </tr>
+            ))}
+          </tbody></table>
+        </section>
+      )}
 
-      {/* ===== Items (igual que antes, pero solo se muestran si:
-            - admin (como antes), o
-            - super_admin y hay dept seleccionado) ===== */}
-      { (user.role!=='super_admin' || selectedDeptId) && (
+      {/* Ítems (filtrados por depto seleccionado o depto del admin) */}
+      {(user.role!=='super_admin' || selectedDeptId) && (
         <section>
           <h4>Items</h4>
           <button className="btn btn-primary" onClick={()=>openModal('item', { name:'', category_id:null, unit:'', vendor:'', is_valuable:false, article_number:null })}>New item</button>
@@ -323,7 +372,6 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
             {items.map(i=>(
               <tr key={i.id}>
                 <td>{i.name}</td>
-                {/* Mostrar NOMBRE de categoría */}
                 <td>{i.category_id ? (catNameById[i.category_id] ?? i.category_id) : ''}</td>
                 <td>{i.unit||''}</td>
                 <td>{i.vendor||''}</td>
@@ -352,12 +400,12 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
           <div className="field"><label>Name</label><input className="input" value={payload.name||''} onChange={e=>setPayload({...payload, name:e.target.value})}/></div>
         </>)}
         {entity==='category' && (<>
+          {user.role==='super_admin' && <div className="field"><label>Department</label><input className="input" type="number" value={payload.department_id ?? (selectedDeptId ?? '')} onChange={e=>setPayload({...payload, department_id: e.target.value===''? null : Number(e.target.value) })}/></div>}
           <div className="field"><label>Name</label><input className="input" value={payload.name||''} onChange={e=>setPayload({...payload, name:e.target.value})}/></div>
         </>)}
         {entity==='item' && (<>
           <div className="field"><label>Name</label><input className="input" value={payload.name||''} onChange={e=>setPayload({...payload, name:e.target.value})}/></div>
 
-          {/* Selector por NOMBRE de categoría (guarda category_id) */}
           <div className="field">
             <label>Category</label>
             <select
@@ -370,7 +418,6 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
                 setPayload({
                   ...payload,
                   category_id: cid,
-                  // Solo para visualización: derive is_valuable si la categoría se llama 'Tagged_Item'
                   is_valuable: cat ? (String(cat.name).toLowerCase() === 'tagged_item') : false
                 })
               }}
@@ -403,15 +450,12 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
               onChange={async (e)=>{
                 const val = e.target.value ? Number(e.target.value) : ''
                 setLinkDeptId(val)
-                // reload areas for selected department
                 let q = supabase.from('areas').select('id,name,department_id').order('id')
                 if(val) q = q.eq('department_id', Number(val))
                 const { data: a } = await q
                 setLinkAreas(a||[])
-                // preserve checked where still visible
                 setCheckedAreas(prev=>{
                   const filtered = new Set(Array.from(prev).filter(id=> (a||[]).some((ar:any)=>ar.id===id)))
-                  // Si es Tagged_Item, normaliza a 1 selección como máximo
                   if (linkItem?.is_valuable && filtered.size > 1) {
                     const first = Array.from(filtered)[0]
                     return new Set(first !== undefined ? [first] : [])
@@ -440,10 +484,8 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
                     const nextChecked = e.target.checked
                     setCheckedAreas(prev=>{
                       if(isTagged_Item){
-                        // Tagged_Item: solo una área a la vez
                         return nextChecked ? new Set([a.id]) : new Set()
                       }else{
-                        // Normal: varias áreas
                         const next = new Set(prev)
                         if(nextChecked) next.add(a.id); else next.delete(a.id)
                         return next
