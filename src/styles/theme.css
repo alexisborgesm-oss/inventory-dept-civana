@@ -1,4 +1,4 @@
-:root{ 
+:root{
   --green:#CDE8D6;
   --obsidian:#3A3A3A;
   --obsidian-2:#2E2E2E;
@@ -151,35 +151,51 @@ tr:hover td{ background:rgba(205,232,214,.08) }
   .field{ display:grid; grid-template-columns: 1fr; }
   .field label{ white-space: normal; line-height: 1.2; }
 
-  /* 2) Tablas: scroll horizontal + columnas alineadas y separadores verticales */
+  /* 2) Tablas: scroll horizontal + columnas alineadas y separadores verticales
+     Ajustes clave:
+     - Mantener table-layout: fixed en la tabla para que thead y tbody compartan el mismo cálculo de anchos
+     - NO forzar display:table en thead/tbody/tr (dejarlos en sus roles nativos)
+     - Aplicar box-sizing y anchos consistentes en th/td; usar white-space: nowrap para mantener columnas
+     - Añadir una regla de min-width para que el contenedor scrolleable funcione en móviles estrechos
+  */
   .card{
     overflow-x: auto;                 /* arrastrar a la derecha */
     -webkit-overflow-scrolling: touch;
   }
+
+  /* Tabla principal dentro de .card: fijar layout y ancho mínimo */
   .card > table{
-    display: table;
     width: 100%;
-    min-width: 760px;                 /* ajusta si necesitas más/menos columnas */
+    min-width: 720px;                 /* ajusta si necesitas más/menos columnas */
     table-layout: fixed;              /* mismas anchuras para thead/tbody */
     border-spacing: 0;
-    border-collapse: separate;        /* necesario para los separadores verticales */
+    border-collapse: collapse;        /* mantener colapsado para evitar offsets */
+    box-sizing: border-box;
   }
-  .card > table thead,
-  .card > table tbody,
-  .card > table tr{
-    display: table;
-    width: 100%;
-  }
+
+  /* Mantener roles semánticos de thead/tbody/tr para evitar desalineos */
+  .card > table thead { display: table-header-group; }
+  .card > table tbody { display: table-row-group; }
+  .card > table tr { display: table-row; }
+
+  /* Asegurar que th y td se comporten idénticamente y con el mismo box-sizing */
   .card > table th,
   .card > table td{
-    text-align: center;
-    vertical-align: middle;
+    display: table-cell;
+    box-sizing: border-box;
+    padding: .55rem .6rem;
     white-space: nowrap;
+    vertical-align: middle;
     border-right: 1px solid rgba(0,0,0,.12); /* separadores de columna */
+    text-align: left;                      /* mantener alineación original por defecto */
   }
+
+  /* Quitar separador derecho en la última columna */
   .card > table th:last-child,
   .card > table td:last-child{
     border-right: none;
   }
-}
 
+  /* Si quieres centrar contenido específico en móvil, usa esta clase en HTML y ajusta aquí:
+     .table-center th, .table-center td { text-align:center; } */
+}
