@@ -132,46 +132,46 @@ tr:hover td{ background:rgba(205,232,214,.08) }
 
 /* Móvil */
 @media (max-width:768px){
-  .navbar{ flex-wrap:wrap; gap:.5rem }
-  .navbar .right{ width:100%; display:flex; gap:.5rem; flex-wrap:wrap; justify-content:flex-end }
-  .navbar a, .navbar button, .navbar .user{ margin-left:0 }
-
-  /* Apilar controles de filtros (primera card) en una columna */
-  .card h3 + *, .card h4 + *{
-    display:grid !important;
-    grid-template-columns:1fr !important;
-    gap:.6rem !important;
-  }
-
-  .card :where(.row, .controls, .toolbar, form){ display:flex; flex-wrap:wrap; gap:.5rem }
-  .card :where(input, select, button){ width:100% }
-
-  /* --- Tablas en móvil: scroll + columnas alineadas --- */
+  /* el scroll va en la tarjeta contenedora */
   .card{
     overflow-x:auto;
     -webkit-overflow-scrolling:touch;
   }
-  .card > table{
-    min-width:760px;           /* ajusta si necesitas más/menos */
-    table-layout:fixed;        /* columnas consistentes */
+
+  /* restaurar layout de tabla y fijar consistencia de columnas */
+  .card table{
+    display:table !important;     /* anula el display:block previo */
     width:100%;
+    min-width:780px;              /* ajusta si necesitas más/menos */
+    table-layout:fixed;
+    border-collapse:collapse;
     border-spacing:0;
   }
-  .card > table th,
-  .card > table td{
-    text-align:center;         /* centra cabeceras y celdas */
-    vertical-align:middle;
-     border-right:1px solid rgba(0,0,0,0.15); 
-    white-space:nowrap;        /* preferimos scroll a saltos */
-  }
-}
+  .card thead{ display:table-header-group !important; }
+  .card tbody{ display:table-row-group   !important; }
+  .card tr   { display:table-row         !important; }
 
-/* Muy angosto (≤420px): tamaños más compactos */
-@media (max-width:420px){
-  html{ font-size:15px }
-  .navbar .brand{ font-size:.95rem }
-  .navbar a, .navbar button, .navbar .user{ padding:.35rem .55rem; font-size:.9rem }
-  .btn{ padding:.5rem .75rem }
-  .modal{ width:94vw }
-  th, td{ padding:.45rem .5rem; font-size:.95rem }
+  /* celdas centradas y con líneas verticales (delimitadores) */
+  .card th, .card td{
+    text-align:center;
+    vertical-align:middle;
+    white-space:nowrap;
+    padding:.55rem .6rem;
+    border-right:1px solid rgba(0,0,0,.15);
+  }
+  .card th:last-child, .card td:last-child{ border-right:0; }
+
+  /* inputs dentro de celdas: que no desborden */
+  .card td .input,
+  .card td input,
+  .card td select{
+    max-width:100%;
+    width:100%;
+    min-width:0;
+  }
+
+  /* modo oscuro: delimitadores más claros */
+  .dark .card th, .dark .card td{
+    border-right:1px solid rgba(255,255,255,.12);
+  }
 }
