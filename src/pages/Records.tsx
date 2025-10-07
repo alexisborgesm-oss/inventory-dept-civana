@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react' 
 import { supabase } from '../utils/supabase'
 import { fmtDateOnly, fmtTimestamp } from '../utils/dateOnly'
 import { Modal } from '../components/Modal'
@@ -11,6 +11,10 @@ const Records: React.FC<{user:User}> = ({ user })=>{
   const [areas, setAreas] = useState<Record<number,string>>({})
   const [users, setUsers] = useState<Record<string,string>>({})
 
+  // --- departamentos (solo super_admin) ---
+  const [deps, setDeps] = useState<Array<{id:number,name:string}>>([])
+  const [selectedDeptId, setSelectedDeptId] = useState<number | null>(null)
+
   // ---- estado del modal de detalles ----
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -21,16 +25,61 @@ const Records: React.FC<{user:User}> = ({ user })=>{
     category: string, item: string, unit?: string|null, vendor?: string|null, qty: number
   }>>([])
 
+  // ---- carga inicial de usuarios (tabla users) ----
   useEffect(()=>{ (async ()=>{
-    const [{ data: r }, { data: a }, { data: u }] = await Promise.all([
-      supabase.from('records').select('id,area_id,user_id,inventory_date,created_at').order('created_at', { ascending:false }),
-      supabase.from('areas').select('id,name'),
-      supabase.from('users').select('id,username')
-    ])
-    setRows(r || [])
-    setAreas(Object.fromEntries((a||[]).map((x:any)=>[x.id, x.name])))
+    const { data: u } = await supabase.from('users').select('id,username')
     setUsers(Object.fromEntries((u||[]).map((x:any)=>[x.id, x.username])))
   })() },[])
+
+  // ---- cargar departamentos si es super_admin ----
+  useEffect(()=>{ (async ()=>{
+    if(user.role==='super_admin'){
+      const { data: d } = await supabase.from('departments').select('id,name').order('id')
+      setDeps(d||[])
+    }
+  })() },[user.role])
+
+  // ---- cargar registros según rol / departamento seleccionado ----
+  useEffect(()=>{ (async ()=>{
+    try{
+      // Determinar el depto de trabajo
+      let workingDeptId: number | null = null
+      if(user.role==='super_admin'){
+        // si no hay dept seleccionado, no mostramos nada todavía
+        if(selectedDeptId===null){
+          setRows([]); setAreas({})
+          return
+        }
+        workingDeptId = selectedDeptId
+      }else{
+        workingDeptId = user.department_id ?? null
+      }
+
+      // Cargar áreas del departamento (si no hay, la lista queda vacía)
+      let qAreas = supabase.from('areas').select('id,name')
+      if(workingDeptId) qAreas = qAreas.eq('department_id', workingDeptId)
+      const { data: a } = await qAreas
+      const areaMap = Object.fromEntries((a||[]).map((x:any)=>[x.id, x.name]))
+      setAreas(areaMap)
+
+      const areaIds = Object.keys(areaMap).map(id=> Number(id))
+      if(areaIds.length===0){
+        setRows([])
+        return
+      }
+
+      // Cargar records SOLO de esas áreas
+      const { data: r } = await supabase
+        .from('records')
+        .select('id,area_id,user_id,inventory_date,created_at')
+        .in('area_id', areaIds)
+        .order('created_at', { ascending:false })
+
+      setRows(r || [])
+    }catch(err:any){
+      alert(err?.message || String(err))
+    }
+  })() },[user.role, user.department_id, selectedDeptId])
 
   async function remove(id:number){
     if(!confirm('Delete this record?')) return
@@ -118,6 +167,28 @@ const Records: React.FC<{user:User}> = ({ user })=>{
   return (
     <div className="card">
       <h3 style={{marginTop:0}}>Records</h3>
+
+      {/* Selector de departamentos (solo super_admin) */}
+      {user.role==='super_admin' && (
+        <section style={{marginBottom:12}}>
+          <h4 style={{margin:'8px 0'}}>Departments</h4>
+          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))', gap:8}}>
+            {deps.map(d=>(
+              <label key={d.id} className="card" style={{display:'flex', alignItems:'center', gap:8, padding:8}}>
+                <input
+                  type="radio"
+                  name="dept-filter"
+                  checked={selectedDeptId === d.id}
+                  onChange={()=> setSelectedDeptId(d.id)}
+                />
+                <span>{d.name} <small style={{opacity:.65}}>#{d.id}</small></span>
+              </label>
+            ))}
+          </div>
+          {!selectedDeptId && <div style={{opacity:.7, marginTop:6}}>Select a department to view its records.</div>}
+        </section>
+      )}
+
       <table>
         <thead>
           <tr>
