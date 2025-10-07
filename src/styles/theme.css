@@ -131,47 +131,55 @@ tr:hover td{ background:rgba(205,232,214,.08) }
 }
 
 /* Móvil */
-@media (max-width:768px){
-  /* el scroll va en la tarjeta contenedora */
+/* === MOBILE — apilar controles NO-tabla y mantener tablas con scroll/alineadas === */
+@media (max-width: 768px){
+
+  /* 1) Apilar el primer bloque de controles bajo el título (Create Records, etc.) */
+  .card h3 + *,
+  .card h4 + *{
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: .6rem !important;
+  }
+  /* Que nada dentro de ese bloque intente forzar anchuras raras */
+  .card h3 + * > *,
+  .card h4 + * > *{
+    min-width: 0;
+    width: 100%;
+  }
+  /* Etiquetas y campos en bloque para evitar solapes de texto */
+  .field{ display:grid; grid-template-columns: 1fr; }
+  .field label{ white-space: normal; line-height: 1.2; }
+
+  /* 2) Tablas: scroll horizontal + columnas alineadas y separadores verticales */
   .card{
-    overflow-x:auto;
-    -webkit-overflow-scrolling:touch;
+    overflow-x: auto;                 /* arrastrar a la derecha */
+    -webkit-overflow-scrolling: touch;
   }
-
-  /* restaurar layout de tabla y fijar consistencia de columnas */
-  .card table{
-    display:table !important;     /* anula el display:block previo */
-    width:100%;
-    min-width:780px;              /* ajusta si necesitas más/menos */
-    table-layout:fixed;
-    border-collapse:collapse;
-    border-spacing:0;
+  .card > table{
+    display: table;
+    width: 100%;
+    min-width: 760px;                 /* ajusta si necesitas más/menos columnas */
+    table-layout: fixed;              /* mismas anchuras para thead/tbody */
+    border-spacing: 0;
+    border-collapse: separate;        /* necesario para los separadores verticales */
   }
-  .card thead{ display:table-header-group !important; }
-  .card tbody{ display:table-row-group   !important; }
-  .card tr   { display:table-row         !important; }
-
-  /* celdas centradas y con líneas verticales (delimitadores) */
-  .card th, .card td{
-    text-align:center;
-    vertical-align:middle;
-    white-space:nowrap;
-    padding:.55rem .6rem;
-    border-right:1px solid rgba(0,0,0,.15);
+  .card > table thead,
+  .card > table tbody,
+  .card > table tr{
+    display: table;
+    width: 100%;
   }
-  .card th:last-child, .card td:last-child{ border-right:0; }
-
-  /* inputs dentro de celdas: que no desborden */
-  .card td .input,
-  .card td input,
-  .card td select{
-    max-width:100%;
-    width:100%;
-    min-width:0;
+  .card > table th,
+  .card > table td{
+    text-align: center;
+    vertical-align: middle;
+    white-space: nowrap;
+    border-right: 1px solid rgba(0,0,0,.12); /* separadores de columna */
   }
-
-  /* modo oscuro: delimitadores más claros */
-  .dark .card th, .dark .card td{
-    border-right:1px solid rgba(255,255,255,.12);
+  .card > table th:last-child,
+  .card > table td:last-child{
+    border-right: none;
   }
 }
+
