@@ -541,7 +541,7 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
               </ResponsiveContainer>
             </div>
             {userRecData.length === 0 && (
-              <div style={{ opacity: 0.7, background: green, marginTop: 6 }}>
+              <div style={{ opacity: 0.7, background: 'green', marginTop: 6 }}>
                 No records for this month/year.
               </div>
             )}
