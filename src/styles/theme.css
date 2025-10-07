@@ -10,45 +10,45 @@
   --shadow:0 6px 20px rgba(0,0,0,.12);
   --transition: all .3s ease-in-out;
 }
-*{ box-sizing:border-box; min-width:0 }
+*{ box-sizing:border-box }
 html,body,#root{ height:100% }
 body{
   margin:0;
   font-family:'Inter', ui-sans-serif, system-ui, -apple-system, 'Helvetica Neue', Arial;
-  background: var(--soft-white);
-  color: var(--text);
-  -webkit-text-size-adjust:100%;
+  background:var(--soft-white);
+  color:var(--text);
 }
 
-/* Light / Dark */
+/* App wrapper */
 .app{
   min-height:100%;
   display:flex;
   flex-direction:column;
 }
-.dark body{ background: var(--graphite); color: var(--soft-white) }
+.dark body{ background:var(--graphite); color:var(--soft-white) }
 
 /* Navbar */
 .navbar{
   position:sticky; top:0; z-index:20;
   display:flex; align-items:center; justify-content:space-between;
+  gap:.5rem;
   padding:.75rem 1rem;
-  background: var(--obsidian);
-  color: var(--soft-white);
-  box-shadow: var(--shadow);
+  background:var(--obsidian);
+  color:var(--soft-white);
+  box-shadow:var(--shadow);
 }
 .navbar .brand{ font-weight:600; letter-spacing:.5px }
 .navbar a, .navbar button, .navbar .user{
   color:var(--soft-white); text-decoration:none; margin-left:.75rem;
   padding:.45rem .75rem; border-radius:10px; border:1px solid transparent;
-  transition: var(--transition);
+  transition:var(--transition);
   white-space:nowrap;
 }
 .navbar a:hover, .navbar button:hover{
-  background: rgba(205,232,214,.15);
+  background:rgba(205,232,214,.15);
   border-color:var(--green);
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  text-decoration:underline;
+  text-underline-offset:3px;
 }
 
 /* Dropdown */
@@ -58,8 +58,7 @@ body{
   background:var(--obsidian); color:var(--soft-white);
   border:1px solid rgba(255,255,255,.08);
   border-radius:12px; padding:.5rem; min-width:220px;
-  box-shadow: var(--shadow); display:none;
-  max-height:70vh; overflow:auto;
+  box-shadow:var(--shadow); display:none;
 }
 .dropdown.open .dropdown-menu{ display:block }
 .dropdown-menu a{ display:block; padding:.5rem .6rem; border-radius:10px }
@@ -69,11 +68,11 @@ body{
 .container{ width:100%; max-width:1200px; margin:1rem auto; padding:0 1rem }
 .card{
   background:var(--soft-white); border-radius:var(--radius);
-  box-shadow: var(--shadow); padding:1rem; margin-bottom:1rem;
-  /* permite scroll horizontal de tablas sin tocar el HTML */
-  overflow-x:auto; -webkit-overflow-scrolling:touch;
+  box-shadow:var(--shadow); padding:1rem; margin-bottom:1rem;
+  /* permite scroll horizontal de cualquier contenido ancho (tablas, filas de filtros, etc.) */
+  overflow-x:auto;
 }
-.dark .card{ background: var(--obsidian) }
+.dark .card{ background:var(--obsidian) }
 
 /* Buttons */
 .btn{ padding:.6rem .9rem; border-radius:12px; border:1px solid transparent; cursor:pointer; transition:var(--transition) }
@@ -81,73 +80,107 @@ body{
 .btn-primary:hover{ filter:brightness(0.95); transform:translateY(-1px) }
 .btn-secondary{ background:transparent; color:#111212; border-color:#819d8a }
 .btn-secondary:hover{ background:rgba(205,232,214,.1) }
-.btn-danger{ background:#e57373; color:white }
+.btn-danger{ background:#e57373; color:#fff }
 .btn-danger:hover{ filter:brightness(.95) }
 
 /* Forms */
-.field{ display:flex; flex-direction:column; margin-bottom:.75rem }
-.field label{ font-weight:600; margin-bottom:.35rem }
+.field{ display:flex; flex-direction:column; margin-bottom:.75rem; min-width:0 }
+.field label{ font-weight:600; margin-bottom:.35rem; line-height:1.2 }
 .input, .select{
-  width:100%;
   padding:.6rem .7rem; border-radius:12px;
   border:1px solid var(--green);
-  background:white;
+  background:#fff;
   transition:var(--transition);
+  min-width:0; /* evita desbordes en contenedores estrechos */
+  width:100%;
+  max-width:100%;
 }
 .input::placeholder{ color:#b8b8b8 }
 .input:focus, .select:focus{ outline:none; border-color:#98cfae; box-shadow:0 0 0 3px rgba(205,232,214,.35) }
-.dark .input, .dark .select{ background: var(--obsidian-2); color: var(--soft-white) }
+.dark .input, .dark .select{ background:var(--obsidian-2); color:var(--soft-white) }
 
-/* Tables: scroll horizontal universal sin cambiar JSX */
-table{
-  width:100%;
-  border-collapse:collapse;
-  display:block;              /* permite overflow-x */
-  overflow-x:auto;
-  -webkit-overflow-scrolling:touch;
-  white-space:nowrap;         /* evita cortes en celdas */
+/* Asegura que los controles en filas muy apretadas no se pisen */
+.card :where(input,select,button){
+  min-height:40px;
+  line-height:1.1;
 }
-th, td{ text-align:left; padding:.55rem .6rem; border-bottom:1px solid rgba(0,0,0,.08) }
-th{ font-weight:600; user-select:none; cursor:pointer; position:relative }
+
+/* Tables: siempre 100% y con desplazamiento horizontal cuando no quepa. */
+table{
+  border-collapse:collapse;
+  width:100%;
+  max-width:100%;
+  /* en móviles convertimos la tabla en “scrollable” sin romper su estructura */
+  display:table;
+}
+th, td{
+  text-align:left; padding:.55rem .6rem; border-bottom:1px solid rgba(0,0,0,.08);
+  vertical-align:middle;
+  white-space:nowrap; /* evita quiebres feos en cabeceras cortas */
+}
+th{ font-weight:600; user-select:none; cursor:pointer }
 tr:hover td{ background:rgba(205,232,214,.08) }
 
 /* Modal */
 .modal-backdrop{
-  position:fixed; inset:0;
-  background: rgba(46,46,46,.55);
+  position:fixed; inset:0; padding:1rem; /* padding ayuda a centrar en pantallas angostas */
+  background:rgba(46,46,46,.55);
   display:flex; align-items:center; justify-content:center;
-  padding: 1rem;                 /* separa de bordes en móvil */
-  animation: fade .2s ease;
+  animation:fade .2s ease;
 }
 .modal{
-  background:var(--soft-white); color:inherit; border-radius:18px; padding:1rem;
-  width: clamp(280px, 92vw, 900px);   /* se adapta a pantalla */
-  max-height: 90vh;                  /* nunca sale del alto */
-  overflow:auto;                     /* scroll interno si hace falta */
-  box-shadow: var(--shadow);
-  position:relative; animation: slideUp .25s ease;
+  background:var(--soft-white); color:inherit; border-radius:18px;
+  padding:1rem; width:min(900px, 92vw); max-height:90vh; overflow:auto;
+  box-shadow:var(--shadow); position:relative; animation:slideUp .25s ease;
 }
-.dark .modal{ background: var(--obsidian) }
+.dark .modal{ background:var(--obsidian) }
 .modal-close{ position:absolute; right:.6rem; top:.6rem; border:none; background:transparent; font-size:1.1rem; color:#bbb; cursor:pointer }
 @keyframes fade{ from{opacity:0} to{opacity:1} }
 @keyframes slideUp{ from{ transform:translateY(8px); opacity:.9 } to{ transform:translateY(0); opacity:1 } }
 
-/* Helpers para evitar desbordes en grid/flex */
-.card, .container, .modal{ min-width:0 }
-table, .dropdown-menu{ min-width:0 }
+/* ========= Responsive tweaks ========= */
 
-/* Responsive */
+/* Todo: que el contenedor no colapse y permita scroll horizontal si algo se desborda */
+.container{ overflow:visible }
+
+/* >= Tablet: sin cambios grandes, pero permitimos que las celdas rompan cuando sea necesario */
 @media (max-width: 1024px){
-  .container{ padding:0 .75rem }
+  th, td{ white-space:normal }
 }
+
+/* Móvil: pila todo en una columna, evita solapamientos y permite scroll en tablas */
 @media (max-width: 768px){
   .navbar{ flex-wrap:wrap; gap:.5rem }
   .navbar .right{ width:100%; display:flex; gap:.5rem; flex-wrap:wrap; justify-content:flex-end }
-  .dropdown-menu{ min-width:min(220px, 90vw) }
-  th, td{ padding:.5rem .55rem }
+  .navbar a, .navbar button, .navbar .user{ margin-left:0 }
+
+  /* En tarjetas con filas de filtros/inputs, que todo ocupe el 100% y haga wrap */
+  .card{ overflow-x:auto }
+  .card > *{ min-width:0 }
+
+  /* Asegura que cualquier fila horizontal con muchos controles se parta en varias líneas */
+  .card :where(.row, .controls, .toolbar){ display:flex; flex-wrap:wrap; gap:.5rem }
+
+  /* Inputs/Selects/Buttons al 100% de ancho en móvil */
+  .card :where(input, select, button){ width:100% }
+
+  /* Tablas: convertir en scroll horizontal limpio */
+  .card table{
+    display:block;
+    width:100%;
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+    border-spacing:0;
+  }
+  .card thead, .card tbody{ display:table; width:100% }
+  .card tr{ display:table; width:100% }
+  th, td{ white-space:nowrap } /* scroll horizontal en vez de saltos raros */
 }
-@media (max-width: 480px){
-  .navbar .brand{ font-size:1rem }
-  .navbar a, .navbar button, .navbar .user{ margin-left:.5rem; padding:.4rem .6rem }
-  .btn{ padding:.55rem .8rem }
+
+/* Extra pequeño (teléfonos angostos ~360px) */
+@media (max-width: 420px){
+  .navbar .brand{ font-size:.95rem }
+  .navbar a, .navbar button, .navbar .user{ padding:.35rem .55rem; font-size:.9rem }
+  .btn{ padding:.5rem .75rem }
+  .modal{ width:94vw }
 }
