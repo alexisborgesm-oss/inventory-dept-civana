@@ -10,13 +10,14 @@
   --shadow:0 6px 20px rgba(0,0,0,.12);
   --transition: all .3s ease-in-out;
 }
-*{ box-sizing:border-box }
+*{ box-sizing:border-box; min-width:0 }
 html,body,#root{ height:100% }
 body{
   margin:0;
-  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Helvetica Neue', Arial;
+  font-family:'Inter', ui-sans-serif, system-ui, -apple-system, 'Helvetica Neue', Arial;
   background: var(--soft-white);
   color: var(--text);
+  -webkit-text-size-adjust:100%;
 }
 
 /* Light / Dark */
@@ -41,6 +42,7 @@ body{
   color:var(--soft-white); text-decoration:none; margin-left:.75rem;
   padding:.45rem .75rem; border-radius:10px; border:1px solid transparent;
   transition: var(--transition);
+  white-space:nowrap;
 }
 .navbar a:hover, .navbar button:hover{
   background: rgba(205,232,214,.15);
@@ -57,6 +59,7 @@ body{
   border:1px solid rgba(255,255,255,.08);
   border-radius:12px; padding:.5rem; min-width:220px;
   box-shadow: var(--shadow); display:none;
+  max-height:70vh; overflow:auto;
 }
 .dropdown.open .dropdown-menu{ display:block }
 .dropdown-menu a{ display:block; padding:.5rem .6rem; border-radius:10px }
@@ -67,6 +70,8 @@ body{
 .card{
   background:var(--soft-white); border-radius:var(--radius);
   box-shadow: var(--shadow); padding:1rem; margin-bottom:1rem;
+  /* permite scroll horizontal de tablas sin tocar el HTML */
+  overflow-x:auto; -webkit-overflow-scrolling:touch;
 }
 .dark .card{ background: var(--obsidian) }
 
@@ -83,6 +88,7 @@ body{
 .field{ display:flex; flex-direction:column; margin-bottom:.75rem }
 .field label{ font-weight:600; margin-bottom:.35rem }
 .input, .select{
+  width:100%;
   padding:.6rem .7rem; border-radius:12px;
   border:1px solid var(--green);
   background:white;
@@ -92,10 +98,17 @@ body{
 .input:focus, .select:focus{ outline:none; border-color:#98cfae; box-shadow:0 0 0 3px rgba(205,232,214,.35) }
 .dark .input, .dark .select{ background: var(--obsidian-2); color: var(--soft-white) }
 
-/* Tables */
-table{ width:100%; border-collapse:collapse }
+/* Tables: scroll horizontal universal sin cambiar JSX */
+table{
+  width:100%;
+  border-collapse:collapse;
+  display:block;              /* permite overflow-x */
+  overflow-x:auto;
+  -webkit-overflow-scrolling:touch;
+  white-space:nowrap;         /* evita cortes en celdas */
+}
 th, td{ text-align:left; padding:.55rem .6rem; border-bottom:1px solid rgba(0,0,0,.08) }
-th{ font-weight:600; user-select:none; cursor:pointer }
+th{ font-weight:600; user-select:none; cursor:pointer; position:relative }
 tr:hover td{ background:rgba(205,232,214,.08) }
 
 /* Modal */
@@ -103,19 +116,38 @@ tr:hover td{ background:rgba(205,232,214,.08) }
   position:fixed; inset:0;
   background: rgba(46,46,46,.55);
   display:flex; align-items:center; justify-content:center;
+  padding: 1rem;                 /* separa de bordes en móvil */
   animation: fade .2s ease;
 }
 .modal{
-  background:var(--soft-white); color:inherit; border-radius:18px; padding:1rem; width:min(900px, 92vw);
-  box-shadow: var(--shadow); position:relative; animation: slideUp .25s ease;
+  background:var(--soft-white); color:inherit; border-radius:18px; padding:1rem;
+  width: clamp(280px, 92vw, 900px);   /* se adapta a pantalla */
+  max-height: 90vh;                  /* nunca sale del alto */
+  overflow:auto;                     /* scroll interno si hace falta */
+  box-shadow: var(--shadow);
+  position:relative; animation: slideUp .25s ease;
 }
 .dark .modal{ background: var(--obsidian) }
 .modal-close{ position:absolute; right:.6rem; top:.6rem; border:none; background:transparent; font-size:1.1rem; color:#bbb; cursor:pointer }
 @keyframes fade{ from{opacity:0} to{opacity:1} }
 @keyframes slideUp{ from{ transform:translateY(8px); opacity:.9 } to{ transform:translateY(0); opacity:1 } }
 
+/* Helpers para evitar desbordes en grid/flex */
+.card, .container, .modal{ min-width:0 }
+table, .dropdown-menu{ min-width:0 }
+
 /* Responsive */
+@media (max-width: 1024px){
+  .container{ padding:0 .75rem }
+}
 @media (max-width: 768px){
   .navbar{ flex-wrap:wrap; gap:.5rem }
   .navbar .right{ width:100%; display:flex; gap:.5rem; flex-wrap:wrap; justify-content:flex-end }
+  .dropdown-menu{ min-width:min(220px, 90vw) }
+  th, td{ padding:.5rem .55rem }
+}
+@media (max-width: 480px){
+  .navbar .brand{ font-size:1rem }
+  .navbar a, .navbar button, .navbar .user{ margin-left:.5rem; padding:.4rem .6rem }
+  .btn{ padding:.55rem .8rem }
 }
