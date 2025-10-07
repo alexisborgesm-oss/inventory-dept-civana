@@ -169,4 +169,27 @@ tr:hover td{ background:rgba(205,232,214,.08) }
   .btn{ padding:.5rem .75rem }
   .modal{ width:94vw }
   th, td{ padding:.45rem .5rem; font-size:.95rem }
+  /* --- Fix alineación de cabeceras/celdas en móvil --- */
+@media (max-width: 768px){
+  /* El scroll horizontal lo hace la tarjeta, no la tabla */
+  .card{ overflow-x: auto; }
+
+  /* La tabla sigue siendo tabla, con un ancho mínimo para no colapsar columnas */
+  .card table{
+    display: table;         /* vuelve a ser tabla */
+    width: 100%;
+    min-width: 700px;       /* ajusta si necesitas más/menos */
+    table-layout: fixed;    /* columnas con ancho consistente */
+    border-spacing: 0;
+  }
+
+  .card thead, .card tbody, .card tr{
+    display: table;         /* asegura layout tabular uniforme */
+    width: 100%;
+  }
+
+  /* Preferimos scroll antes que saltos de línea raros en cabeceras */
+  th, td{ white-space: nowrap; }
+}
+
 }
