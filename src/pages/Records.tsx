@@ -208,7 +208,9 @@ const Records: React.FC<{user:User}> = ({ user })=>{
               <td>{users[r.user_id] || r.user_id}</td>
               <td style={{display:'flex', gap:8}}>
                 <button className="btn btn-secondary" onClick={()=>details(r.id)}>Details</button>
-                <button className="btn btn-danger" onClick={()=>remove(r.id)}>Delete</button>
+                {(user.role === 'super_admin' || user.role === 'admin') && (
+    <button className="btn btn-danger" onClick={()=>remove(r.id)}>Delete</button>
+  )}
               </td>
             </tr>
           ))}
