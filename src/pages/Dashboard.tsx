@@ -493,7 +493,7 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
               }}
             >
               <h4 style={{ margin: 0, flex: "1 1 auto" }}>
-                Records por usuario (mes seleccionado)
+                Records per user (selected month)
               </h4>
 
               <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -541,8 +541,8 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
               </ResponsiveContainer>
             </div>
             {userRecData.length === 0 && (
-              <div style={{ opacity: 0.7, marginTop: 6 }}>
-                No hay registros para ese mes/año.
+              <div style={{ opacity: 0.7, background: green, marginTop: 6 }}>
+                No records for this month/year.
               </div>
             )}
           </div>
