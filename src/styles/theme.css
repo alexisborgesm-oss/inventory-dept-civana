@@ -161,6 +161,7 @@ tr:hover td{ background:rgba(205,232,214,.08) }
   .card > table td{
     text-align:center;         /* centra cabeceras y celdas */
     vertical-align:middle;
+     border-right:1px solid rgba(0,0,0,0.15); 
     white-space:nowrap;        /* preferimos scroll a saltos */
   }
 }
