@@ -29,21 +29,17 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
   useEffect(()=>{ refresh() },[selectedDeptId])
 
   async function refresh(){
-    // Departamentos (para radios de super_admin)
     if(user.role==='super_admin'){
       const { data: d } = await supabase.from('departments').select('*').order('id')
       setDeps(d||[])
     }
 
-    // Áreas + Categorías + Ítems según rol/departamento
     if(user.role==='super_admin'){
-      // Sin depto seleccionado: limpiar listados
       if(!selectedDeptId){
         setAreas([]); setCats([]); setItems([])
         return
       }
 
-      // Áreas del depto seleccionado (se mantienen visibles como antes)
       const { data: a } = await supabase
         .from('areas')
         .select('*')
@@ -51,7 +47,6 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
         .order('id')
       setAreas(a||[])
 
-      // Categorías del depto seleccionado
       const { data: c } = await supabase
         .from('categories')
         .select('*')
@@ -59,7 +54,6 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
         .order('id')
       setCats(c||[])
 
-      // Ítems por CATEGORÍAS del depto (ya no dependemos de area_items)
       const catIds = (c || []).map((x:any)=> x.id)
       if (catIds.length){
         const { data: i } = await supabase
@@ -73,22 +67,18 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
       }
 
     } else {
-      // ADMIN/STANDARD: filtrar por su departamento
       const deptId = user.department_id ?? null
 
-      // Áreas del propio depto (se muestran igual que antes)
       let qAreas = supabase.from('areas').select('*')
       if(deptId) qAreas = qAreas.eq('department_id', deptId)
       const { data: a } = await qAreas.order('id')
       setAreas(a||[])
 
-      // Categorías del propio depto
       let qCats = supabase.from('categories').select('*')
       if(deptId) qCats = qCats.eq('department_id', deptId)
       const { data: c } = await qCats.order('id')
       setCats(c||[])
 
-      // Ítems por CATEGORÍAS del depto del admin
       const catIds = (c || []).map((x:any)=> x.id)
       if (catIds.length){
         const { data: i } = await supabase
@@ -124,11 +114,11 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
       const vendor = String(payload.vendor ?? '').trim() || null
       const article_number = String(payload.article_number ?? '').trim() || null
 
-      // Si categoría es Tagged_Item => exigir article_number y marcar is_valuable
+      // Usar categories.tagged para saber si es "valuable"
       const cat = (cats||[]).find((c:any)=> c.id === category_id)
-      const is_valuable = !!(cat && String(cat.name).toLowerCase() === 'tagged_item')
+      const is_valuable = !!cat?.tagged
       if(is_valuable && !article_number){
-        alert("Article number is required when category is 'Tagged_Item'.")
+        alert("Article number is required when category is tagged.")
         return
       }
 
@@ -144,16 +134,17 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
       }
 
     } else if (entity==='category'){
-      // Agregar department_id a la categoría
+      // Incluir department_id y tagged
       data = { ...payload }
       if(user.role==='super_admin'){
         data.department_id = selectedDeptId ?? null
       } else {
         data.department_id = user.department_id
       }
+      // tagged siempre booleano
+      data.tagged = !!payload.tagged
 
     } else {
-      // department (sin cambios)
       data = { ...payload }
     }
 
@@ -177,7 +168,6 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
   async function openLinkModal(item:any){
     setLinkItem(item)
 
-    // depto actual para áreas del modal
     let currentDept = user.department_id
     if(user.role==='super_admin'){
       if(selectedDeptId){
@@ -190,7 +180,6 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
       }
     }
 
-    // Áreas del depto elegido (o del admin)
     let q = supabase.from('areas').select('id,name,department_id').order('id')
     if(user.role!=='super_admin' && user.department_id) q = q.eq('department_id', user.department_id)
     if(user.role==='super_admin' && currentDept) q = q.eq('department_id', currentDept as number)
@@ -198,7 +187,6 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
     if(ea){ alert(ea.message); return }
     setLinkAreas(a||[])
 
-    // Links existentes del ítem
     const { data: links, error: el } = await supabase.from('area_items').select('area_id').eq('item_id', item.id)
     if(el){ alert(el.message); return }
     const set = new Set<number>((links||[]).map(r=>r.area_id))
@@ -216,7 +204,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
     if(!confirm('Save area assignments for this item?')) return
 
     if (linkItem?.is_valuable && checkedAreas.size > 1) {
-      alert('A Tagged_Item item can be assigned to only one area.')
+      alert('A tagged item can be assigned to only one area.')
       return
     }
 
@@ -285,7 +273,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
         </section>
       )}
 
-      {/* Áreas (super_admin con dept seleccionado, o admin siempre) */}
+      {/* Áreas */}
       {(user.role!=='super_admin' || selectedDeptId) && (
         <section>
           <h4>Areas</h4>
@@ -315,7 +303,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
         </section>
       )}
 
-      {/* Categorías (filtradas por depto seleccionado o depto del admin) */}
+      {/* Categorías */}
       {(user.role!=='super_admin' || selectedDeptId) && (
         <section>
           <h4>Categories</h4>
@@ -325,7 +313,8 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
               name:'',
               department_id: user.role==='super_admin'
                 ? (selectedDeptId ?? null)
-                : user.department_id
+                : user.department_id,
+              tagged: false
             })}
           >
             New category
@@ -345,7 +334,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
         </section>
       )}
 
-      {/* Ítems (filtrados por depto seleccionado o depto del admin) */}
+      {/* Ítems */}
       {(user.role!=='super_admin' || selectedDeptId) && (
         <section>
           <h4>Items</h4>
@@ -384,6 +373,14 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
         {entity==='category' && (<>
           {user.role==='super_admin' && <div className="field"><label>Department</label><input className="input" type="number" value={payload.department_id ?? (selectedDeptId ?? '')} onChange={e=>setPayload({...payload, department_id: e.target.value===''? null : Number(e.target.value) })}/></div>}
           <div className="field"><label>Name</label><input className="input" value={payload.name||''} onChange={e=>setPayload({...payload, name:e.target.value})}/></div>
+          {/* NUEVO: checkbox para marcar si la categoría es "tagged" */}
+          <div className="field">
+            <label><input
+              type="checkbox"
+              checked={!!payload.tagged}
+              onChange={e=>setPayload({...payload, tagged: e.target.checked})}
+            /> Tagged (items require Article # and can be assigned to a single area)</label>
+          </div>
         </>)}
         {entity==='item' && (<>
           <div className="field"><label>Name</label><input className="input" value={payload.name||''} onChange={e=>setPayload({...payload, name:e.target.value})}/></div>
@@ -400,7 +397,8 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
                 setPayload({
                   ...payload,
                   category_id: cid,
-                  is_valuable: cat ? (String(cat.name).toLowerCase() === 'tagged_item') : false
+                  // derive de categories.tagged (no por nombre)
+                  is_valuable: !!cat?.tagged
                 })
               }}
             >
@@ -413,7 +411,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
 
           <div className="field"><label>Unit (optional)</label><input className="input" value={payload.unit||''} onChange={e=>setPayload({...payload, unit:e.target.value})}/></div>
           <div className="field"><label>Vendor (optional)</label><input className="input" value={payload.vendor||''} onChange={e=>setPayload({...payload, vendor:e.target.value})}/></div>
-          <div className="field"><label>Valuable category (auto if category name 'Tagged_Item')</label><input className="input" value={payload.is_valuable?'Yes':'No'} disabled/></div>
+          <div className="field"><label>Valuable category (auto if category is tagged)</label><input className="input" value={payload.is_valuable?'Yes':'No'} disabled/></div>
           <div className="field"><label>Article number (required if Valuable)</label><input className="input" value={payload.article_number||''} onChange={e=>setPayload({...payload, article_number:e.target.value})}/></div>
         </>)}
       </Modal>
