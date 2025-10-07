@@ -11,6 +11,7 @@ import MonthlyInventory from './pages/MonthlyInventory'
 import AdminCatalog from './pages/AdminCatalog'
 import ChangePassword from "./components/ChangePassword";
 import { Modal } from './components/Modal'
+import Dashboard from './pages/Dashboard'  // <-- NUEVO
 
 type UserRow = { id:string, username:string, role:'super_admin'|'admin'|'standard', department_id: number | null }
 
@@ -113,6 +114,7 @@ export default function App(){
             <Route path="/threshold" element={<Threshold user={user}/>} />
             <Route path="/monthly-inventory" element={<MonthlyInventory user={user}/>} />
             <Route path="/admin-catalog" element={<AdminCatalog user={user}/>} />
+            <Route path="/dashboard" element={<Dashboard user={user}/>} /> {/* <-- NUEVO */}
             <Route path="*" element={<CreateRecords user={user}/>} />
           </Routes>
         }
@@ -182,6 +184,7 @@ const Nav: React.FC<{
               {(user.role==='admin' || user.role==='super_admin') && <Link to="/threshold">Threshold</Link>}
               {(user.role==='admin' || user.role==='super_admin') && <Link to="/monthly-inventory">Monthly Inventory</Link>}
               {(user.role==='super_admin' || user.role==='admin') && <Link to="/admin-catalog">Admin-Catalog</Link>}
+              {(user.role==='super_admin' || user.role==='admin') && <Link to="/dashboard">Dashboard</Link>}{/* <-- NUEVO */}
               <a onClick={onLogout}>Logout</a>
             </div>
           </div>
