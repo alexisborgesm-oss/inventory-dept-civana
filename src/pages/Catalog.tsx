@@ -212,15 +212,14 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
       <section>
         <h4>Items</h4>
         <button className="btn btn-primary" onClick={()=>openModal('item', { name:'', category_id:null, unit:'', vendor:'', is_valuable:false, article_number:null })}>New item</button>
-        <table><thead><tr><th>Name</th><th>Category</th><th>Unit</th><th>Vendor</th><th>Tagged Item</th><th>Article #</th><th>Actions</th></tr></thead><tbody>
+        <table><thead><tr><th>Name</th><th>Category</th><th>Unit</th><th>Vendor</th><th>Article #</th><th>Actions</th></tr></thead><tbody>
           {items.map(i=>(
             <tr key={i.id}>
               <td>{i.name}</td>
               {/* Mostrar NOMBRE de categoría */}
               <td>{i.category_id ? (catNameById[i.category_id] ?? i.category_id) : ''}</td>
               <td>{i.unit||''}</td>
-              <td>{i.vendor||''}</td>
-              <td>{i.is_valuable?'Yes':'No'}</td>
+              <td>{i.vendor||''}</td>              
               <td>{i.article_number||''}</td>
               <td style={{display:'flex',gap:8, flexWrap:'wrap'}}>
                 <button className="btn btn-secondary" onClick={()=>openModal('item', i)}>Modify</button>
