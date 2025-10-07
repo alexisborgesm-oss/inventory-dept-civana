@@ -53,7 +53,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
     let data:any
 
     if(entity==='item'){
-      // Enviar SOLO columnas reales de items (no enviar is_valuable; lo maneja la BD)
+      // Enviar SOLO columnas reales de items
       const name = String(payload.name || '').trim()
       const category_id = (payload.category_id ?? null)
       const unit = String(payload.unit ?? '').trim() || null
@@ -62,13 +62,14 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
 
       // Validación UX: si la categoría elegida es 'Tagged_Item', exigir article_number
       const cat = (cats||[]).find((c:any)=> c.id === category_id)
-      const isVal = !!(cat && String(cat.name).toLowerCase() === 'tagged_item')
-      if(isVal && !article_number){
+      const is_valuable = !!(cat && String(cat.name).toLowerCase() === 'tagged_item')
+      if(is_valuable && !article_number){
         alert("Article number is required when category is 'Tagged_Item'.")
         return
       }
 
-      data = { name, category_id, unit, vendor, article_number,isVal}
+      // 🔧 CLAVE CORRECTA: is_valuable (antes se enviaba 'isVal')
+      data = { name, category_id, unit, vendor, article_number, is_valuable }
     } else {
       // Otras entidades conservan tu comportamiento original
       data = { ...payload }
