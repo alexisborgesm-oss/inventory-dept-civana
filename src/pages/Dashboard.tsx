@@ -28,7 +28,6 @@ type Item = {
   article_number?: string | null;
   is_valuable?: boolean | null;
 };
-
 type Threshold = { area_id: number; item_id: number; expected_qty: number };
 type MonthlyInv = {
   id: number;
@@ -38,15 +37,23 @@ type MonthlyInv = {
   item_id: number | null;
   qty_total: number;
 };
-
 type RecordRow = { id: number; area_id: number; inventory_date: string; created_at: string };
 
-const monthShort = (m: number) => new Date(2000, m - 1, 1).toLocaleString("en", { month: "short" });
+const monthShort = (m: number) =>
+  new Date(2000, m - 1, 1).toLocaleString("en", { month: "short" });
+
+const MONTHS = [
+  { v: 1, n: "Jan" }, { v: 2, n: "Feb" }, { v: 3, n: "Mar" }, { v: 4, n: "Apr" },
+  { v: 5, n: "May" }, { v: 6, n: "Jun" }, { v: 7, n: "Jul" }, { v: 8, n: "Aug" },
+  { v: 9, n: "Sep" }, { v: 10, n: "Oct" }, { v: 11, n: "Nov" }, { v: 12, n: "Dec" },
+];
 
 const Dashboard: React.FC<{ user: User }> = ({ user }) => {
   const isSA = user.role === "super_admin";
   const [departments, setDepartments] = useState<Dept[]>([]);
-  const [deptId, setDeptId] = useState<number | null>(isSA ? null : user.department_id ?? null);
+  const [deptId, setDeptId] = useState<number | null>(
+    isSA ? null : user.department_id ?? null
+  );
 
   // domain data
   const [areas, setAreas] = useState<Area[]>([]);
@@ -59,21 +66,22 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
   // UI
   const [loading, setLoading] = useState(false);
   const [itemForSeries, setItemForSeries] = useState<number | "">("");
-const now = new Date()
-const [selMonth, setSelMonth] = useState<number>(now.getMonth() + 1) // 1..12
-const [selYear,  setSelYear]  = useState<number>(now.getFullYear())
-const [userRecData, setUserRecData] = useState<Array<{ name: string; count: number }>>([])
 
-const MONTHS = [
-  { v:1,  n:'Jan' }, { v:2,  n:'Feb' }, { v:3,  n:'Mar' }, { v:4,  n:'Apr' },
-  { v:5,  n:'May' }, { v:6,  n:'Jun' }, { v:7,  n:'Jul' }, { v:8,  n:'Aug' },
-  { v:9,  n:'Sep' }, { v:10, n:'Oct' }, { v:11, n:'Nov' }, { v:12, n:'Dec' },
-]
+  // -------- Gráfica: Records por usuario (mes/año) ----------
+  const now = new Date();
+  const [selMonth, setSelMonth] = useState<number>(now.getMonth() + 1); // 1..12
+  const [selYear, setSelYear] = useState<number>(now.getFullYear());
+  const [userRecData, setUserRecData] = useState<Array<{ name: string; count: number }>>([]);
+
   // ===== Load departments (only super_admin) =====
   useEffect(() => {
     if (!isSA) return;
     (async () => {
-      const { data } = await supabase.from("departments").select("id,name").order("id");
+      const { data, error } = await supabase
+        .from("departments")
+        .select("id,name")
+        .order("id");
+      if (error) { alert(error.message); return; }
       setDepartments(data || []);
     })();
   }, [isSA]);
@@ -86,8 +94,14 @@ const MONTHS = [
       try {
         const [{ data: a }, { data: c }, { data: it }, { data: rec }, { data: thr }, { data: mi }] =
           await Promise.all([
-            supabase.from("areas").select("id,name,department_id").eq("department_id", deptId),
-            supabase.from("categories").select("id,name,department_id,tagged").eq("department_id", deptId),
+            supabase
+              .from("areas")
+              .select("id,name,department_id")
+              .eq("department_id", deptId),
+            supabase
+              .from("categories")
+              .select("id,name,department_id,tagged")
+              .eq("department_id", deptId),
             // items del depto: por categorías del depto
             supabase
               .from("items")
@@ -111,7 +125,10 @@ const MONTHS = [
                 "area_id",
                 (
                   (
-                    await supabase.from("areas").select("id").eq("department_id", deptId)
+                    await supabase
+                      .from("areas")
+                      .select("id")
+                      .eq("department_id", deptId)
                   ).data || []
                 ).map((r: any) => r.id)
               )
@@ -124,11 +141,14 @@ const MONTHS = [
                 "area_id",
                 (
                   (
-                    await supabase.from("areas").select("id").eq("department_id", deptId)
+                    await supabase
+                      .from("areas")
+                      .select("id")
+                      .eq("department_id", deptId)
                   ).data || []
                 ).map((r: any) => r.id)
               ),
-            // monthly_inventories del depto (usaremos últimos 12 meses)
+            // monthly_inventories del depto
             supabase
               .from("monthly_inventories")
               .select("id,department_id,month,year,item_id,qty_total")
@@ -153,6 +173,26 @@ const MONTHS = [
     })();
   }, [deptId]); // eslint-disable-line
 
+  // ====== Cargar "records por usuario" cada vez que cambie depto/mes/año ======
+  useEffect(() => {
+    if (!deptId) return;
+    (async function loadRecordsByUser() {
+      const { data, error } = await supabase
+        .from("v_records_by_user_month")
+        .select("username,records_count")
+        .eq("department_id", deptId)
+        .eq("year", selYear)
+        .eq("month", selMonth)
+        .order("records_count", { ascending: false });
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+      setUserRecData((data || []).map((r: any) => ({ name: r.username, count: r.records_count })));
+    })();
+  }, [deptId, selYear, selMonth]);
+
   // ====== KPIs ======
   const KPI = useMemo(() => {
     const kAreas = areas.length;
@@ -168,7 +208,9 @@ const MONTHS = [
     const lastDate =
       records.length > 0
         ? new Date(
-            [...records].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))[0].created_at
+            [...records].sort(
+              (a, b) => +new Date(b.created_at) - +new Date(a.created_at)
+            )[0].created_at
           )
         : null;
 
@@ -178,7 +220,10 @@ const MONTHS = [
       items: kItems,
       last30,
       lastDateLabel: lastDate
-        ? `${lastDate.toLocaleDateString()} ${lastDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+        ? `${lastDate.toLocaleDateString()} ${lastDate.toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}`
         : "—",
     };
   }, [areas, categories, items, records]);
@@ -232,7 +277,10 @@ const MONTHS = [
     // thresholds agregados (sum expected por item en todas las áreas del depto)
     const expectedByItem = new Map<number, number>();
     thresholds.forEach((t) => {
-      expectedByItem.set(t.item_id, (expectedByItem.get(t.item_id) || 0) + Number(t.expected_qty || 0));
+      expectedByItem.set(
+        t.item_id,
+        (expectedByItem.get(t.item_id) || 0) + Number(t.expected_qty || 0)
+      );
     });
 
     // comparar
@@ -266,27 +314,6 @@ const MONTHS = [
       if (m === 12) y -= 1;
     }
 
-// Llama esta carga cuando cambien departamento, mes o año.
-// Usa el departmentId que ya manejas en el Dashboard (para super_admin viene del selector).
-useEffect(() => {
-  if (!currentDepartmentId) return
-  loadRecordsByUser(currentDepartmentId, selYear, selMonth)
-}, [currentDepartmentId, selYear, selMonth])
-   async function loadRecordsByUser(departmentId: number, year: number, month: number) {
-  const { data, error } = await supabase
-    .from('v_records_by_user_month')
-    .select('username,records_count')
-    .eq('department_id', departmentId)
-    .eq('year', year)
-    .eq('month', month)
-    .order('records_count', { ascending: false })
-
-  if (error) {
-    alert(error.message)
-    return
-  }
-  setUserRecData((data || []).map((r: any) => ({ name: r.username, count: r.records_count })))
-} 
     // sumar qty_total del item seleccionado por (y,m)
     const map = new Map<string, number>();
     mnlys
@@ -314,7 +341,9 @@ useEffect(() => {
             <select
               className="select"
               value={deptId ?? ""}
-              onChange={(e) => setDeptId(e.target.value ? Number(e.target.value) : null)}
+              onChange={(e) =>
+                setDeptId(e.target.value ? Number(e.target.value) : null)
+              }
             >
               <option value="">Select a department</option>
               {departments.map((d) => (
@@ -367,7 +396,9 @@ useEffect(() => {
 
           {/* Low stock table */}
           <div className="card">
-            <h4 style={{ marginTop: 0 }}>Low stock (latest Monthly Inventory vs thresholds)</h4>
+            <h4 style={{ marginTop: 0 }}>
+              Low stock (latest Monthly Inventory vs thresholds)
+            </h4>
             {loading ? (
               <div style={{ opacity: 0.75 }}>Loading…</div>
             ) : lowStockRows.length === 0 ? (
@@ -389,7 +420,10 @@ useEffect(() => {
                         <td>{r.item_name}</td>
                         <td className="right">{r.current}</td>
                         <td className="right">{r.expected}</td>
-                        <td className="right" style={{ color: "#d32f2f", fontWeight: 600 }}>
+                        <td
+                          className="right"
+                          style={{ color: "#d32f2f", fontWeight: 600 }}
+                        >
                           {r.deficit}
                         </td>
                       </tr>
@@ -402,14 +436,27 @@ useEffect(() => {
 
           {/* Serie mensual por artículo */}
           <div className="card">
-            <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-              <h4 style={{ margin: 0, flex: "0 0 auto" }}>Monthly quantities by item</h4>
+            <div
+              style={{
+                display: "flex",
+                gap: 12,
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              <h4 style={{ margin: 0, flex: "0 0 auto" }}>
+                Monthly quantities by item
+              </h4>
               <div className="field" style={{ margin: 0, minWidth: 220 }}>
                 <label>Item</label>
                 <select
                   className="select"
                   value={itemForSeries}
-                  onChange={(e) => setItemForSeries(e.target.value ? Number(e.target.value) : "")}
+                  onChange={(e) =>
+                    setItemForSeries(
+                      e.target.value ? Number(e.target.value) : ""
+                    )
+                  }
                 >
                   {items.map((it) => (
                     <option key={it.id} value={it.id}>
@@ -434,61 +481,81 @@ useEffect(() => {
             </div>
           </div>
 
+          {/* Records por usuario (mes/año) */}
+          <div className="card">
+            <div
+              style={{
+                display: "flex",
+                gap: 12,
+                alignItems: "center",
+                flexWrap: "wrap",
+                marginBottom: 8,
+              }}
+            >
+              <h4 style={{ margin: 0, flex: "1 1 auto" }}>
+                Records por usuario (mes seleccionado)
+              </h4>
 
+              <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span>Month</span>
+                <select
+                  className="select"
+                  value={selMonth}
+                  onChange={(e) => setSelMonth(Number(e.target.value))}
+                >
+                  {MONTHS.map((m) => (
+                    <option key={m.v} value={m.v}>
+                      {m.n}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
+              <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span>Year</span>
+                <input
+                  className="input"
+                  type="number"
+                  min={2000}
+                  max={9999}
+                  value={selYear}
+                  onChange={(e) => setSelYear(Number(e.target.value))}
+                  style={{ width: 110 }}
+                />
+              </label>
+            </div>
 
-          
-<div className="card">
-  <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
-    <h4 style={{ margin: 0, flex: '1 1 auto' }}>Records por usuario (mes seleccionado)</h4>
-
-    <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-      <span>Month</span>
-      <select className="select" value={selMonth} onChange={e => setSelMonth(Number(e.target.value))}>
-        {MONTHS.map(m => <option key={m.v} value={m.v}>{m.n}</option>)}
-      </select>
-    </label>
-
-    <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-      <span>Year</span>
-      <input
-        className="input"
-        type="number"
-        min={2000}
-        max={9999}
-        value={selYear}
-        onChange={e => setSelYear(Number(e.target.value))}
-        style={{ width: 110 }}
-      />
-    </label>
-  </div>
-
-  <div style={{ width: '100%', height: 320 }}>
-    <ResponsiveContainer width="100%" height="100%">
-      <BarChart data={userRecData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" />
-        <XAxis dataKey="name" />
-        <YAxis allowDecimals={false} />
-        <Tooltip />
-        <Legend />
-        <Bar dataKey="count" name="Records" />
-      </BarChart>
-    </ResponsiveContainer>
-  </div>
-</div>
-
-
-
-
-
-          
+            <div style={{ width: "100%", height: 320 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={userRecData}
+                  margin={{ top: 10, right: 20, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="count" name="Records" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            {userRecData.length === 0 && (
+              <div style={{ opacity: 0.7, marginTop: 6 }}>
+                No hay registros para ese mes/año.
+              </div>
+            )}
+          </div>
         </>
       )}
     </div>
   );
 };
 
-const Kpi: React.FC<{ title: string; value: string | number }> = ({ title, value }) => (
+const Kpi: React.FC<{ title: string; value: string | number }> = ({
+  title,
+  value,
+}) => (
   <div
     className="card"
     style={{
@@ -499,7 +566,9 @@ const Kpi: React.FC<{ title: string; value: string | number }> = ({ title, value
       gap: 6,
     }}
   >
-    <div style={{ opacity: 0.7, fontSize: 13, letterSpacing: 0.2 }}>{title}</div>
+    <div style={{ opacity: 0.7, fontSize: 13, letterSpacing: 0.2 }}>
+      {title}
+    </div>
     <div style={{ fontWeight: 700, fontSize: 22 }}>{value}</div>
   </div>
 );
