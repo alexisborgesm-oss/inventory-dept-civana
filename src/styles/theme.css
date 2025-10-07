@@ -1,4 +1,4 @@
-:root{
+:root{ 
   --green:#CDE8D6;
   --obsidian:#3A3A3A;
   --obsidian-2:#2E2E2E;
@@ -68,7 +68,7 @@ body{
 .card{
   background:var(--soft-white); border-radius:var(--radius);
   box-shadow:var(--shadow); padding:1rem; margin-bottom:1rem;
-  overflow-x:auto; /* tablancha -> scrollable */
+  overflow-x:auto; /* tablas anchas -> scroll horizontal seguro */
 }
 .dark .card{ background:var(--obsidian) }
 
@@ -96,8 +96,8 @@ body{
 /* Evita que controles se pisen incluso en contenedores estrechos */
 .card :where(input,select,button){ min-height:40px; line-height:1.1 }
 
-/* Tables -> 100% y scroll horizontal cuando no quepan */
-table{ border-collapse:collapse; width:100%; max-width:100%; display:table }
+/* Tables */
+table{ border-collapse:collapse; width:100%; max-width:100%; }
 th, td{
   text-align:left; padding:.55rem .6rem;
   border-bottom:1px solid rgba(0,0,0,.08);
@@ -125,43 +125,47 @@ tr:hover td{ background:rgba(205,232,214,.08) }
 
 /* ================== Responsive ================== */
 
-/* Tablet ↓ : permite que celdas rompan texto */
+/* Tablet ↓ : permite cortar texto si hace falta */
 @media (max-width:1024px){
   th, td{ white-space:normal }
 }
 
-/* Móvil: apilar formularios/controles de cabeceras en una sola columna */
+/* Móvil */
 @media (max-width:768px){
   .navbar{ flex-wrap:wrap; gap:.5rem }
   .navbar .right{ width:100%; display:flex; gap:.5rem; flex-wrap:wrap; justify-content:flex-end }
   .navbar a, .navbar button, .navbar .user{ margin-left:0 }
 
-  /* Heurística de “auto-stack” para la 1ª tarjeta (tus filtros de Create Records):
-     - si un título (<h3> o <h4>) va seguido de un bloque con controles,
-       lo volvemos grid de 1 columna para que TODO se apile ordenado. */
+  /* Apilar controles de filtros (primera card) en una columna */
   .card h3 + *, .card h4 + *{
     display:grid !important;
     grid-template-columns:1fr !important;
     gap:.6rem !important;
   }
 
-  /* Cualquier fila horizontal dentro de las tarjetas se parte en varias líneas */
   .card :where(.row, .controls, .toolbar, form){ display:flex; flex-wrap:wrap; gap:.5rem }
-
-  /* Inputs/Selects/Buttons al 100% en móvil */
   .card :where(input, select, button){ width:100% }
 
-  /* Tablas scrollables, sin romper estructura */
-  .card table{
-    display:block; width:100%; overflow-x:auto;
-    -webkit-overflow-scrolling:touch; border-spacing:0;
+  /* --- Tablas en móvil: scroll + columnas alineadas --- */
+  .card{
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
   }
-  .card thead, .card tbody{ display:table; width:100% }
-  .card tr{ display:table; width:100% }
-  th, td{ white-space:nowrap } /* preferimos scroll horizontal a saltos feos */
+  .card > table{
+    min-width:760px;           /* ajusta si necesitas más/menos */
+    table-layout:fixed;        /* columnas consistentes */
+    width:100%;
+    border-spacing:0;
+  }
+  .card > table th,
+  .card > table td{
+    text-align:center;         /* centra cabeceras y celdas */
+    vertical-align:middle;
+    white-space:nowrap;        /* preferimos scroll a saltos */
+  }
 }
 
-/* Muy angosto (≤420px): reducimos tamaños y apretamos paddings */
+/* Muy angosto (≤420px): tamaños más compactos */
 @media (max-width:420px){
   html{ font-size:15px }
   .navbar .brand{ font-size:.95rem }
@@ -169,33 +173,4 @@ tr:hover td{ background:rgba(205,232,214,.08) }
   .btn{ padding:.5rem .75rem }
   .modal{ width:94vw }
   th, td{ padding:.45rem .5rem; font-size:.95rem }
-  /* --- Fix alineación de cabeceras/celdas en móvil --- */
-/* --- Tablas en móvil: scroll horizontal + celdas centradas --- */
-@media (max-width: 768px){
-  /* el contenedor permite arrastrar a la derecha */
-  .card{
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch; /* scroll suave en iOS */
-  }
-
-  /* la tabla mantiene layout tabular pero con ancho mínimo para no colapsar */
-  .card > table{
-    min-width: 760px;           /* ajusta si necesitas más/menos */
-    table-layout: fixed;        /* columnas consistentes */
-    width: 100%;
-    border-spacing: 0;
-  }
-
-  /* centrar cabeceras y celdas y evitar saltos raros de línea */
-  .card > table th,
-  .card > table td{
-    text-align: center;
-    vertical-align: middle;
-    white-space: nowrap;
-  }
-
-  /* inputs dentro de celdas: que no se desborden visualmente */
-  .card > table td .input{
-    max-width: 100%;
-  }
 }
