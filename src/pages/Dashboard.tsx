@@ -59,7 +59,16 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
   // UI
   const [loading, setLoading] = useState(false);
   const [itemForSeries, setItemForSeries] = useState<number | "">("");
+const now = new Date()
+const [selMonth, setSelMonth] = useState<number>(now.getMonth() + 1) // 1..12
+const [selYear,  setSelYear]  = useState<number>(now.getFullYear())
+const [userRecData, setUserRecData] = useState<Array<{ name: string; count: number }>>([])
 
+const MONTHS = [
+  { v:1,  n:'Jan' }, { v:2,  n:'Feb' }, { v:3,  n:'Mar' }, { v:4,  n:'Apr' },
+  { v:5,  n:'May' }, { v:6,  n:'Jun' }, { v:7,  n:'Jul' }, { v:8,  n:'Aug' },
+  { v:9,  n:'Sep' }, { v:10, n:'Oct' }, { v:11, n:'Nov' }, { v:12, n:'Dec' },
+]
   // ===== Load departments (only super_admin) =====
   useEffect(() => {
     if (!isSA) return;
@@ -257,6 +266,27 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
       if (m === 12) y -= 1;
     }
 
+// Llama esta carga cuando cambien departamento, mes o año.
+// Usa el departmentId que ya manejas en el Dashboard (para super_admin viene del selector).
+useEffect(() => {
+  if (!currentDepartmentId) return
+  loadRecordsByUser(currentDepartmentId, selYear, selMonth)
+}, [currentDepartmentId, selYear, selMonth])
+   async function loadRecordsByUser(departmentId: number, year: number, month: number) {
+  const { data, error } = await supabase
+    .from('v_records_by_user_month')
+    .select('username,records_count')
+    .eq('department_id', departmentId)
+    .eq('year', year)
+    .eq('month', month)
+    .order('records_count', { ascending: false })
+
+  if (error) {
+    alert(error.message)
+    return
+  }
+  setUserRecData((data || []).map((r: any) => ({ name: r.username, count: r.records_count })))
+} 
     // sumar qty_total del item seleccionado por (y,m)
     const map = new Map<string, number>();
     mnlys
@@ -403,6 +433,55 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
               </ResponsiveContainer>
             </div>
           </div>
+
+
+
+
+          
+<div className="card">
+  <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+    <h4 style={{ margin: 0, flex: '1 1 auto' }}>Records por usuario (mes seleccionado)</h4>
+
+    <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <span>Month</span>
+      <select className="select" value={selMonth} onChange={e => setSelMonth(Number(e.target.value))}>
+        {MONTHS.map(m => <option key={m.v} value={m.v}>{m.n}</option>)}
+      </select>
+    </label>
+
+    <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <span>Year</span>
+      <input
+        className="input"
+        type="number"
+        min={2000}
+        max={9999}
+        value={selYear}
+        onChange={e => setSelYear(Number(e.target.value))}
+        style={{ width: 110 }}
+      />
+    </label>
+  </div>
+
+  <div style={{ width: '100%', height: 320 }}>
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart data={userRecData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="name" />
+        <YAxis allowDecimals={false} />
+        <Tooltip />
+        <Legend />
+        <Bar dataKey="count" name="Records" />
+      </BarChart>
+    </ResponsiveContainer>
+  </div>
+</div>
+
+
+
+
+
+          
         </>
       )}
     </div>
