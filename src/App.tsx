@@ -78,7 +78,7 @@ const Nav: React.FC<{user:UserRow|null,onLogout:()=>void,menuOpen:boolean,setMen
               <Link to="/records">Records</Link>
               {(user.role==='admin' || user.role==='super_admin') && <Link to="/catalog">Catalog</Link>}
               {(user.role==='admin' || user.role==='super_admin') && <Link to="/threshold">Threshold</Link>}
-              <Link to="/monthly-inventory">Monthly Inventory</Link>
+              {(user.role==='admin' || user.role==='super_admin') && <Link to="/monthly-inventory">Monthly Inventory</Link>}
               {(user.role==='super_admin' || user.role==='admin') && <Link to="/admin-catalog">Admin-Catalog</Link>}
               <a onClick={onLogout}>Logout</a>
             </div>
