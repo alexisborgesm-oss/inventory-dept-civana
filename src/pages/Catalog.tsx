@@ -43,7 +43,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
         return
       }
 
-      // Áreas del depto seleccionado
+      // Áreas del depto seleccionado (se mantienen visibles como antes)
       const { data: a } = await supabase
         .from('areas')
         .select('*')
@@ -51,7 +51,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
         .order('id')
       setAreas(a||[])
 
-      // Categorías del depto seleccionado (requiere categories.department_id)
+      // Categorías del depto seleccionado
       const { data: c } = await supabase
         .from('categories')
         .select('*')
@@ -59,25 +59,16 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
         .order('id')
       setCats(c||[])
 
-      // Ítems asociados a Áreas del depto (vía area_items)
-      const areaIds = (a||[]).map((r:any)=>r.id)
-      if(areaIds.length){
-        const { data: ai } = await supabase
-          .from('area_items')
-          .select('item_id')
-          .in('area_id', areaIds)
-        const itemIds = Array.from(new Set((ai||[]).map((r:any)=>r.item_id)))
-        if(itemIds.length){
-          const { data: i } = await supabase
-            .from('items_with_flags')
-            .select('*')
-            .in('id', itemIds)
-            .order('id')
-          setItems(i||[])
-        }else{
-          setItems([])
-        }
-      }else{
+      // Ítems por CATEGORÍAS del depto (ya no dependemos de area_items)
+      const catIds = (c || []).map((x:any)=> x.id)
+      if (catIds.length){
+        const { data: i } = await supabase
+          .from('items_with_flags')
+          .select('*')
+          .in('category_id', catIds)
+          .order('id')
+        setItems(i || [])
+      } else {
         setItems([])
       }
 
@@ -85,37 +76,28 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
       // ADMIN/STANDARD: filtrar por su departamento
       const deptId = user.department_id ?? null
 
-      // Áreas del propio depto
+      // Áreas del propio depto (se muestran igual que antes)
       let qAreas = supabase.from('areas').select('*')
       if(deptId) qAreas = qAreas.eq('department_id', deptId)
       const { data: a } = await qAreas.order('id')
       setAreas(a||[])
 
-      // Categorías del propio depto (requiere categories.department_id)
+      // Categorías del propio depto
       let qCats = supabase.from('categories').select('*')
       if(deptId) qCats = qCats.eq('department_id', deptId)
       const { data: c } = await qCats.order('id')
       setCats(c||[])
 
-      // Ítems vinculados a áreas de su depto
-      const areaIds = (a||[]).map((r:any)=>r.id)
-      if(areaIds.length){
-        const { data: ai } = await supabase
-          .from('area_items')
-          .select('item_id')
-          .in('area_id', areaIds)
-        const itemIds = Array.from(new Set((ai||[]).map((r:any)=>r.item_id)))
-        if(itemIds.length){
-          const { data: i } = await supabase
-            .from('items_with_flags')
-            .select('*')
-            .in('id', itemIds)
-            .order('id')
-          setItems(i||[])
-        }else{
-          setItems([])
-        }
-      }else{
+      // Ítems por CATEGORÍAS del depto del admin
+      const catIds = (c || []).map((x:any)=> x.id)
+      if (catIds.length){
+        const { data: i } = await supabase
+          .from('items_with_flags')
+          .select('*')
+          .in('category_id', catIds)
+          .order('id')
+        setItems(i || [])
+      } else {
         setItems([])
       }
     }
