@@ -170,26 +170,32 @@ tr:hover td{ background:rgba(205,232,214,.08) }
   .modal{ width:94vw }
   th, td{ padding:.45rem .5rem; font-size:.95rem }
   /* --- Fix alineación de cabeceras/celdas en móvil --- */
+/* --- Tablas en móvil: scroll horizontal + celdas centradas --- */
 @media (max-width: 768px){
-  /* El scroll horizontal lo hace la tarjeta, no la tabla */
-  .card{ overflow-x: auto; }
+  /* el contenedor permite arrastrar a la derecha */
+  .card{
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch; /* scroll suave en iOS */
+  }
 
-  /* La tabla sigue siendo tabla, con un ancho mínimo para no colapsar columnas */
-  .card table{
-    display: table;         /* vuelve a ser tabla */
+  /* la tabla mantiene layout tabular pero con ancho mínimo para no colapsar */
+  .card > table{
+    min-width: 760px;           /* ajusta si necesitas más/menos */
+    table-layout: fixed;        /* columnas consistentes */
     width: 100%;
-    min-width: 700px;       /* ajusta si necesitas más/menos */
-    table-layout: fixed;    /* columnas con ancho consistente */
     border-spacing: 0;
   }
 
-  .card thead, .card tbody, .card tr{
-    display: table;         /* asegura layout tabular uniforme */
-    width: 100%;
+  /* centrar cabeceras y celdas y evitar saltos raros de línea */
+  .card > table th,
+  .card > table td{
+    text-align: center;
+    vertical-align: middle;
+    white-space: nowrap;
   }
 
-  /* Preferimos scroll antes que saltos de línea raros en cabeceras */
-  th, td{ white-space: nowrap; }
-}
-
+  /* inputs dentro de celdas: que no se desborden visualmente */
+  .card > table td .input{
+    max-width: 100%;
+  }
 }
