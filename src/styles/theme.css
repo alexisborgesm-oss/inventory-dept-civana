@@ -186,7 +186,7 @@ tr:hover td{ background:rgba(205,232,214,.08) }
     padding: .55rem .6rem;
     white-space: nowrap;
     vertical-align: middle;
-    border-right: 1px solid rgba(0,0,0,.12); /* separadores de columna */
+   // border-right: 1px solid rgba(0,0,0,.12); /* separadores de columna */
     text-align: left;                      /* mantener alineación original por defecto */
   }
 
