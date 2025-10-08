@@ -28,10 +28,10 @@ function fmtTimestampLocal(ts: string | Date) {
 }
 
 const CreateRecords: React.FC<{ user:User }> = ({ user })=>{
-  // Departamentos (solo admin)
+  // Departamentos (solo super_admin)
   const [departments, setDepartments] = useState<Dept[]>([])
   const [selectedDeptId, setSelectedDeptId] = useState<number|''>(
-    user.role==='admin' ? '' : (user.department_id ?? '')
+    user.role==='super_admin' ? '' : (user.department_id ?? '')
   )
 
   // Selectores del header
@@ -50,7 +50,7 @@ const CreateRecords: React.FC<{ user:User }> = ({ user })=>{
   const [thresholdByItem, setThresholdByItem] = useState<Record<number, number>>({})
   const [qtyByItem, setQtyByItem] = useState<Record<number, string>>({})
 
-  /* ===== Cargar departamentos (solo admin) ===== */
+  /* ===== Cargar departamentos (solo super_admin) ===== */
   useEffect(()=>{ (async ()=>{
     if (user.role !== 'super_admin') return
     const { data, error } = await supabase.from('departments').select('id,name').order('name')
@@ -63,13 +63,10 @@ const CreateRecords: React.FC<{ user:User }> = ({ user })=>{
     let q = supabase.from('areas').select('id,name,department_id').order('name', { ascending: true })
 
     if (user.role === 'super_admin') {
-      // Super admin: no filtramos por departamento aquí
-    } else if (user.role === 'admin') {
-      // Admin: requiere seleccionar un departamento
       if (!selectedDeptId) { setAreas([]); setAreaId(''); return }
       q = q.eq('department_id', Number(selectedDeptId))
     } else {
-      // standard: su propio departamento
+      // admin y standard: su propio departamento
       if (user.department_id) q = q.eq('department_id', user.department_id)
     }
 
@@ -79,14 +76,14 @@ const CreateRecords: React.FC<{ user:User }> = ({ user })=>{
     if((data||[]).length && areaId==='') setAreaId(data![0].id)
   })() },[user.role, user.department_id, selectedDeptId])
 
-  /* ===== Catálogo de categorías (id->nombre) ===== */
+  /* ===== Catálogo de categorías ===== */
   useEffect(()=>{ (async ()=>{
     const { data, error } = await supabase.from('categories').select('id,name').order('name')
     if(error){ alert(error.message); return }
     setCategories(Object.fromEntries((data||[]).map((c:any)=>[c.id, c.name])))
   })() },[])
 
-  /* ===== Cargar items y thresholds cuando cambia el área ===== */
+  /* ===== Cargar items y thresholds ===== */
   useEffect(()=>{ (async ()=>{
     if(!areaId) { setItems([]); setThresholdByItem({}); setQtyByItem({}); return }
 
@@ -151,7 +148,7 @@ const CreateRecords: React.FC<{ user:User }> = ({ user })=>{
 
   /* ===== Guardar ===== */
   async function saveRecord(){
-    if(user.role==='admin' && !selectedDeptId){
+    if(user.role==='super_admin' && !selectedDeptId){
       alert('Please select a department')
       return
     }
@@ -208,8 +205,8 @@ const CreateRecords: React.FC<{ user:User }> = ({ user })=>{
 
         <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr auto', gap:12, alignItems:'end'}}>
 
-          {/* Department (solo admin) */}
-          {user.role==='admin' && (
+          {/* Department (solo super_admin) */}
+          {user.role==='super_admin' && (
             <div className="field">
               <label>Department</label>
               <select
@@ -218,7 +215,7 @@ const CreateRecords: React.FC<{ user:User }> = ({ user })=>{
                 onChange={e=>{
                   const v = e.target.value ? Number(e.target.value) : ''
                   setSelectedDeptId(v)
-                  setAreaId('') // reset área al cambiar dept
+                  setAreaId('')
                 }}
               >
                 <option value="">Select department</option>
@@ -232,8 +229,8 @@ const CreateRecords: React.FC<{ user:User }> = ({ user })=>{
           {/* Area */}
           <div className="field">
             <label>Area</label>
-            <select className="select" value={areaId} onChange={e=> setAreaId(e.target.value?Number(e.target.value):'')} disabled={user.role==='admin' && !selectedDeptId}>
-              <option value="">{user.role==='admin' && !selectedDeptId ? 'Select department first' : 'Select area'}</option>
+            <select className="select" value={areaId} onChange={e=> setAreaId(e.target.value?Number(e.target.value):'')} disabled={user.role==='super_admin' && !selectedDeptId}>
+              <option value="">{user.role==='super_admin' && !selectedDeptId ? 'Select department first' : 'Select area'}</option>
               {areas.map(a=> <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           </div>
@@ -275,7 +272,7 @@ const CreateRecords: React.FC<{ user:User }> = ({ user })=>{
 
           {/* Save */}
           <div className="field" style={{textAlign:'right'}}>
-            <button className="btn btn-primary" onClick={saveRecord} disabled={!areaId || (user.role==='admin' && !selectedDeptId)}>Save record</button>
+            <button className="btn btn-primary" onClick={saveRecord} disabled={!areaId || (user.role==='super_admin' && !selectedDeptId)}>Save record</button>
           </div>
         </div>
       </div>
