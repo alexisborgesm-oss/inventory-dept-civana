@@ -67,11 +67,16 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
   const [loading, setLoading] = useState(false);
   const [itemForSeries, setItemForSeries] = useState<number | "">("");
 
-  // -------- Gráfica: Records por usuario (mes/año) ----------
+  // Selectores de mes/año (compartidos por 2 gráficas de barras)
   const now = new Date();
-  const [selMonth, setSelMonth] = useState<number>(now.getMonth() + 1); // 1..12
+  const [selMonth, setSelMonth] = useState<number>(now.getMonth() + 1);
   const [selYear, setSelYear] = useState<number>(now.getFullYear());
+
+  // Records por usuario (mes/año)
   const [userRecData, setUserRecData] = useState<Array<{ name: string; count: number }>>([]);
+
+  // NUEVO: Records por área (mes/año)
+  const [areaRecData, setAreaRecData] = useState<Array<{ name: string; count: number }>>([]);
 
   // ===== Load departments (only super_admin) =====
   useEffect(() => {
@@ -86,7 +91,7 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
     })();
   }, [isSA]);
 
-  // ===== Load all needed data when dept changes (or admin fixed dept) =====
+  // ===== Load all needed data when dept changes =====
   useEffect(() => {
     if (!deptId) return;
     setLoading(true);
@@ -102,7 +107,6 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
               .from("categories")
               .select("id,name,department_id,tagged")
               .eq("department_id", deptId),
-            // items del depto: por categorías del depto
             supabase
               .from("items")
               .select("id,name,category_id,unit,vendor,article_number,is_valuable")
@@ -117,7 +121,6 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
                   ).data || []
                 ).map((r: any) => r.id)
               ),
-            // records de áreas del depto
             supabase
               .from("records")
               .select("id,area_id,inventory_date,created_at")
@@ -133,7 +136,6 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
                 ).map((r: any) => r.id)
               )
               .order("created_at", { ascending: false }),
-            // thresholds de áreas del depto
             supabase
               .from("thresholds")
               .select("area_id,item_id,expected_qty")
@@ -148,7 +150,6 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
                   ).data || []
                 ).map((r: any) => r.id)
               ),
-            // monthly_inventories del depto
             supabase
               .from("monthly_inventories")
               .select("id,department_id,month,year,item_id,qty_total")
@@ -162,7 +163,6 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
         setThresholds(thr || []);
         setMnlys(mi || []);
 
-        // Preseleccionar un ítem para la serie mensual (el primero)
         if (!itemForSeries) {
           const first = (it || [])[0]?.id ?? "";
           setItemForSeries(first || "");
@@ -173,7 +173,7 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
     })();
   }, [deptId]); // eslint-disable-line
 
-  // ====== Cargar "records por usuario" cada vez que cambie depto/mes/año ======
+  // ====== Records por usuario (vista v_records_by_user_month) ======
   useEffect(() => {
     if (!deptId) return;
     (async function loadRecordsByUser() {
@@ -185,11 +185,25 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
         .eq("month", selMonth)
         .order("records_count", { ascending: false });
 
-      if (error) {
-        alert(error.message);
-        return;
-      }
+      if (error) { alert(error.message); return; }
       setUserRecData((data || []).map((r: any) => ({ name: r.username, count: r.records_count })));
+    })();
+  }, [deptId, selYear, selMonth]);
+
+  // ====== NUEVO: Records por área (vista v_records_by_area_month) ======
+  useEffect(() => {
+    if (!deptId) return;
+    (async function loadRecordsByArea() {
+      const { data, error } = await supabase
+        .from("v_records_by_area_month")
+        .select("area_name,records_count")
+        .eq("department_id", deptId)
+        .eq("year", selYear)
+        .eq("month", selMonth)
+        .order("records_count", { ascending: false });
+
+      if (error) { alert(error.message); return; }
+      setAreaRecData((data || []).map((r: any) => ({ name: r.area_name, count: r.records_count })));
     })();
   }, [deptId, selYear, selMonth]);
 
@@ -199,12 +213,10 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
     const kCats = categories.length;
     const kItems = items.length;
 
-    // Records últimos 30 días
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 30);
     const last30 = records.filter((r) => new Date(r.created_at) >= cutoff).length;
 
-    // Última fecha inventariada (por created_at)
     const lastDate =
       records.length > 0
         ? new Date(
@@ -230,7 +242,6 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
 
   // ====== Actividad por mes (últimos 6 meses) ======
   const activitySeries = useMemo(() => {
-    // group records by year-month
     const map = new Map<string, number>();
     records.forEach((r) => {
       const d = new Date(r.created_at);
@@ -238,7 +249,6 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
       map.set(key, (map.get(key) || 0) + 1);
     });
 
-    // build last 6 months
     const res: Array<{ label: string; count: number }> = [];
     const today = new Date();
     let m = today.getMonth() + 1;
@@ -253,11 +263,9 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
     return res;
   }, [records]);
 
-  // ====== Low stock (último monthly vs thresholds agregado por depto) ======
+  // ====== Low stock (último monthly vs thresholds) ======
   const lowStockRows = useMemo(() => {
     if (!mnlys.length || !thresholds.length) return [];
-
-    // último (year,month) del depto
     const sorted = [...mnlys].sort((a, b) =>
       a.year !== b.year ? b.year - a.year : b.month - a.month
     );
@@ -265,7 +273,6 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
     const latestM = sorted[0]?.month;
     if (!latestY || !latestM) return [];
 
-    // total por item en monthly (último corte)
     const totalByItem = new Map<number, number>();
     sorted
       .filter((r) => r.year === latestY && r.month === latestM && r.item_id)
@@ -274,7 +281,6 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
         totalByItem.set(iid, (totalByItem.get(iid) || 0) + Number(r.qty_total || 0));
       });
 
-    // thresholds agregados (sum expected por item en todas las áreas del depto)
     const expectedByItem = new Map<number, number>();
     thresholds.forEach((t) => {
       expectedByItem.set(
@@ -283,14 +289,13 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
       );
     });
 
-    // comparar
     const rows = Array.from(expectedByItem.entries())
       .map(([item_id, expected]) => {
         const current = totalByItem.get(item_id) || 0;
         return { item_id, expected, current, deficit: current - expected };
       })
       .filter((r) => r.current < r.expected)
-      .sort((a, b) => a.deficit - b.deficit) // mayores faltantes primero
+      .sort((a, b) => a.deficit - b.deficit)
       .slice(0, 20);
 
     return rows.map((r) => ({
@@ -302,8 +307,6 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
   // ====== Serie mensual por artículo (últimos 12 meses) ======
   const itemQtySeries = useMemo(() => {
     if (!deptId || !itemForSeries || !mnlys.length) return [];
-
-    // construir los últimos 12 meses
     const res: Array<{ label: string; qty: number; y: number; m: number }> = [];
     const today = new Date();
     let m = today.getMonth() + 1;
@@ -313,8 +316,6 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
       m = m === 1 ? 12 : m - 1;
       if (m === 12) y -= 1;
     }
-
-    // sumar qty_total del item seleccionado por (y,m)
     const map = new Map<string, number>();
     mnlys
       .filter((r) => r.department_id === deptId && r.item_id === (itemForSeries as number))
@@ -322,7 +323,6 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
         const key = `${r.year}-${String(r.month).padStart(2, "0")}`;
         map.set(key, (map.get(key) || 0) + Number(r.qty_total || 0));
       });
-
     return res.map((row) => {
       const key = `${row.y}-${String(row.m).padStart(2, "0")}`;
       return { label: row.label, qty: map.get(key) || 0 };
@@ -333,7 +333,6 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
     <div className="card">
       <h3 style={{ marginTop: 0 }}>Dashboard</h3>
 
-      {/* Selector de departamento (obligatorio para super_admin) */}
       {user.role === "super_admin" && (
         <div className="card" style={{ boxShadow: "none" }}>
           <div className="field">
@@ -341,9 +340,7 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
             <select
               className="select"
               value={deptId ?? ""}
-              onChange={(e) =>
-                setDeptId(e.target.value ? Number(e.target.value) : null)
-              }
+              onChange={(e) => setDeptId(e.target.value ? Number(e.target.value) : null)}
             >
               <option value="">Select a department</option>
               {departments.map((d) => (
@@ -356,7 +353,6 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
         </div>
       )}
 
-      {/* Si admin/standard, ya tiene deptId; si SA, hasta que lo escoja */}
       {!deptId ? (
         <div style={{ opacity: 0.8 }}>Choose a department to see data.</div>
       ) : (
@@ -377,7 +373,7 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
             <Kpi title="Last saved" value={KPI.lastDateLabel} />
           </div>
 
-          {/* Actividad por mes (últimos 6 meses) */}
+          {/* Actividad mensual (últimos 6 meses) */}
           <div className="card">
             <h4 style={{ marginTop: 0 }}>Activity (records per month)</h4>
             <div style={{ width: "100%", height: 280 }}>
@@ -436,26 +432,15 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
 
           {/* Serie mensual por artículo */}
           <div className="card">
-            <div
-              style={{
-                display: "flex",
-                gap: 12,
-                alignItems: "center",
-                flexWrap: "wrap",
-              }}
-            >
-              <h4 style={{ margin: 0, flex: "0 0 auto" }}>
-                Monthly quantities by item
-              </h4>
+            <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+              <h4 style={{ margin: 0, flex: "0 0 auto" }}>Monthly quantities by item</h4>
               <div className="field" style={{ margin: 0, minWidth: 220 }}>
                 <label>Item</label>
                 <select
                   className="select"
                   value={itemForSeries}
                   onChange={(e) =>
-                    setItemForSeries(
-                      e.target.value ? Number(e.target.value) : ""
-                    )
+                    setItemForSeries(e.target.value ? Number(e.target.value) : "")
                   }
                 >
                   {items.map((it) => (
@@ -493,7 +478,7 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
               }}
             >
               <h4 style={{ margin: 0, flex: "1 1 auto" }}>
-                Records per user (selected month)
+                Records por usuario (mes seleccionado)
               </h4>
 
               <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -527,10 +512,7 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
 
             <div style={{ width: "100%", height: 320 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={userRecData}
-                  margin={{ top: 10, right: 20, left: 0, bottom: 0 }}
-                >
+                <BarChart data={userRecData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" />
                   <YAxis allowDecimals={false} />
@@ -541,9 +523,27 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
               </ResponsiveContainer>
             </div>
             {userRecData.length === 0 && (
-              <div style={{ opacity: 0.7, background: 'green', marginTop: 6 }}>
-                No records for this month/year.
-              </div>
+              <div style={{ opacity: 0.7, marginTop: 6 }}>No hay registros para ese mes/año.</div>
+            )}
+          </div>
+
+          {/* NUEVO: Records por área (mes/año) */}
+          <div className="card">
+            <h4 style={{ marginTop: 0 }}>Records por área (mes seleccionado)</h4>
+            <div style={{ width: "100%", height: 320 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={areaRecData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="count" name="Records" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            {areaRecData.length === 0 && (
+              <div style={{ opacity: 0.7, marginTop: 6 }}>No hay registros para ese mes/año.</div>
             )}
           </div>
         </>
@@ -552,10 +552,7 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
   );
 };
 
-const Kpi: React.FC<{ title: string; value: string | number }> = ({
-  title,
-  value,
-}) => (
+const Kpi: React.FC<{ title: string; value: string | number }> = ({ title, value }) => (
   <div
     className="card"
     style={{
@@ -566,9 +563,7 @@ const Kpi: React.FC<{ title: string; value: string | number }> = ({
       gap: 6,
     }}
   >
-    <div style={{ opacity: 0.7, fontSize: 13, letterSpacing: 0.2 }}>
-      {title}
-    </div>
+    <div style={{ opacity: 0.7, fontSize: 13, letterSpacing: 0.2 }}>{title}</div>
     <div style={{ fontWeight: 700, fontSize: 22 }}>{value}</div>
   </div>
 );
