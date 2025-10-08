@@ -360,14 +360,15 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
             {cats.map(c=> <option key={c} value={c}>{c}</option>)}
           </select>
 
-          {/* Botón a la derecha */}
-          <div style={{marginLeft:'auto'}}>
-            <button className="btn btn-secondary" onClick={exportMainTable}>Export to Excel</button>
-          </div>
+          
         </div>
       </div>
 
       <div className="card">
+        {/* Botón a la derecha */}
+          <div style={{marginLeft:'auto'}}>
+            <button className="btn btn-secondary" onClick={exportMainTable}>Export to Excel</button>
+          </div>
         <table>
           <thead>
             <tr>
