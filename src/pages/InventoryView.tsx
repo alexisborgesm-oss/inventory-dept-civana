@@ -368,7 +368,7 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
         {/* Botón a la derecha */}
           <div style={{
                  marginLeft:'auto',
-                 padding:'5px';}}>
+                 padding:'5px'}}>
             <button className="btn btn-secondary" onClick={exportMainTable}>Export to Excel</button>
           </div>
         <table>
