@@ -249,7 +249,7 @@ const CreateRecords: React.FC<{ user:User }> = ({ user })=>{
               <th>Item</th>
               <th>Unit</th>
               <th>Vendor</th>
-              <th>Expected (Threshold)</th>
+              <th>Threshold</th>
               <th>Current Qty</th>
             </tr>
           </thead>
