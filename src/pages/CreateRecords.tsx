@@ -52,7 +52,7 @@ const CreateRecords: React.FC<{ user:User }> = ({ user })=>{
 
   /* ===== Cargar departamentos (solo admin) ===== */
   useEffect(()=>{ (async ()=>{
-    if (user.role !== 'admin') return
+    if (user.role !== 'super_admin') return
     const { data, error } = await supabase.from('departments').select('id,name').order('name')
     if (error){ alert(error.message); return }
     setDepartments(data||[])
