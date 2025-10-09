@@ -156,13 +156,24 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
     setOpen(false); refresh()
   }
 
-  async function remove(ent:'department'|'area'|'category'|'item', id:number){
-    if(!confirm('Are you sure to delete?')) return
-    const table = ent==='department'?'departments':ent==='area'?'areas':ent==='category'?'categories':'items'
-    const { error } = await supabase.from(table).delete().eq('id', id)
-    if(error){ alert(error.message); return }
-    refresh()
+ async function remove(ent:'department'|'area'|'category'|'item', id:number){
+  if(!confirm('Are you sure to delete?')) return
+  const table = ent==='department'?'departments':ent==='area'?'areas':ent==='category'?'categories':'items'
+  const { error } = await supabase.from(table).delete().eq('id', id)
+  if(error){
+    const msg = String(error.message || '').toLowerCase()
+    if(ent==='item' && (msg.includes('foreign key') || msg.includes('violates'))){
+      alert('Cannot delete this item because it is referenced by records/thresholds/areas/monthly inventories. Remove those references first.')
+    } else if(ent==='category' && (msg.includes('foreign key') || msg.includes('violates'))){
+      alert('Cannot delete this category because it still has items. Reassign or delete those items first.')
+    } else {
+      alert(error.message)
+    }
+    return
   }
+  refresh()
+}
+
 
   // ===== Linking UI =====
   async function openLinkModal(item:any){
