@@ -158,7 +158,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
 
   // ===== Soft delete (solo items tagged) =====
   async function softDeleteItem(id:number){
-    if(!confirm('Soft delete this tagged item?')) return
+    if(!confirm('Archiving this item means that you no longer have it or it is broken. Continue?')) return
     const { error } = await supabase
       .from('items')
       .update({ deleted_at: new Date().toISOString() })
@@ -360,7 +360,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
                   <button className="btn btn-secondary" onClick={()=>openLinkModal(i)}>Assign to Areas</button>
                   {/* Soft delete SOLO si es tagged (is_valuable) */}
                   {!!i.is_valuable && (
-                    <button className="btn btn-danger" onClick={()=>softDeleteItem(i.id)}>Soft delete</button>
+                    <button className="btn btn-danger" onClick={()=>softDeleteItem(i.id)}>Archive</button>
                   )}
                   {/* Delete removido intencionalmente */}
                 </td>
