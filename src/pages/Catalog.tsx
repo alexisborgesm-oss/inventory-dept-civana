@@ -156,24 +156,16 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
     setOpen(false); refresh()
   }
 
- async function remove(ent:'department'|'area'|'category'|'item', id:number){
-  if(!confirm('Are you sure to delete?')) return
-  const table = ent==='department'?'departments':ent==='area'?'areas':ent==='category'?'categories':'items'
-  const { error } = await supabase.from(table).delete().eq('id', id)
-  if(error){
-    const msg = String(error.message || '').toLowerCase()
-    if(ent==='item' && (msg.includes('foreign key') || msg.includes('violates'))){
-      alert('Cannot delete this item because it is referenced by records/thresholds/areas/monthly inventories. Remove those references first.')
-    } else if(ent==='category' && (msg.includes('foreign key') || msg.includes('violates'))){
-      alert('Cannot delete this category because it still has items. Reassign or delete those items first.')
-    } else {
-      alert(error.message)
-    }
-    return
+  // ===== Soft delete (solo items tagged) =====
+  async function softDeleteItem(id:number){
+    if(!confirm('Soft delete this tagged item?')) return
+    const { error } = await supabase
+      .from('items')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id)
+    if(error){ alert(error.message); return }
+    refresh()
   }
-  refresh()
-}
-
 
   // ===== Linking UI =====
   async function openLinkModal(item:any){
@@ -245,6 +237,11 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
     [cats]
   )
 
+  // (Opcional defensivo): si el view items_with_flags trae deleted_at, evita mostrarlos
+  const visibleItems = useMemo(()=>{
+    return (items||[]).filter((it:any)=> !it.deleted_at)
+  },[items])
+
   return (
     <div className="card">
       <h3 style={{marginTop:0}}>Catalog</h3>
@@ -275,7 +272,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
                   <td>{d.name}</td>
                   <td style={{display:'flex',gap:8}}>
                     <button className="btn btn-secondary" onClick={()=>openModal('department', d)}>Modify</button>
-                    <button className="btn btn-danger" onClick={()=>remove('department', d.id)}>Delete</button>
+                    {/* Delete removido intencionalmente */}
                   </td>
                 </tr>
               ))}
@@ -306,7 +303,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
                 <td>{a.department_id}</td>
                 <td style={{display:'flex',gap:8}}>
                   <button className="btn btn-secondary" onClick={()=>openModal('area', a)}>Modify</button>
-                  <button className="btn btn-danger" onClick={()=>remove('area', a.id)}>Delete</button>
+                  {/* Delete removido intencionalmente */}
                 </td>
               </tr>
             ))}
@@ -337,7 +334,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
                 <td>{c.department_id ?? ''}</td>
                 <td style={{display:'flex',gap:8}}>
                   <button className="btn btn-secondary" onClick={()=>openModal('category', c)}>Modify</button>
-                  <button className="btn btn-danger" onClick={()=>remove('category', c.id)}>Delete</button>
+                  {/* Delete removido intencionalmente */}
                 </td>
               </tr>
             ))}
@@ -351,7 +348,7 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
           <h4>Items</h4>
           <button className="btn btn-primary" onClick={()=>openModal('item', { name:'', category_id:null, unit:'', vendor:'', is_valuable:false, article_number:null })}>New item</button>
           <table><thead><tr><th>Name</th><th>Category</th><th>Unit</th><th>Vendor</th><th>Article #</th><th>Actions</th></tr></thead><tbody>
-            {items.map(i=>(
+            {visibleItems.map(i=>(
               <tr key={i.id}>
                 <td>{i.name}</td>
                 <td>{i.category_id ? (catNameById[i.category_id] ?? i.category_id) : ''}</td>
@@ -361,7 +358,11 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
                 <td style={{display:'flex',gap:8, flexWrap:'wrap'}}>
                   <button className="btn btn-secondary" onClick={()=>openModal('item', i)}>Modify</button>
                   <button className="btn btn-secondary" onClick={()=>openLinkModal(i)}>Assign to Areas</button>
-                  <button className="btn btn-danger" onClick={()=>remove('item', i.id)}>Delete</button>
+                  {/* Soft delete SOLO si es tagged (is_valuable) */}
+                  {!!i.is_valuable && (
+                    <button className="btn btn-danger" onClick={()=>softDeleteItem(i.id)}>Soft delete</button>
+                  )}
+                  {/* Delete removido intencionalmente */}
                 </td>
               </tr>
             ))}
