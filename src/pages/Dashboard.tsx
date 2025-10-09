@@ -478,7 +478,7 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
               }}
             >
               <h4 style={{ margin: 0, flex: "1 1 auto" }}>
-                Records por usuario (mes seleccionado)
+                Records per user (selected month)
               </h4>
 
               <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -523,13 +523,13 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
               </ResponsiveContainer>
             </div>
             {userRecData.length === 0 && (
-              <div style={{ opacity: 0.7, marginTop: 6 }}>No hay registros para ese mes/año.</div>
+              <div style={{ opacity: 0.7, marginTop: 6 }}>No records for this month/year.</div>
             )}
           </div>
 
           {/* NUEVO: Records por área (mes/año) */}
           <div className="card">
-            <h4 style={{ marginTop: 0 }}>Records por área (mes seleccionado)</h4>
+            <h4 style={{ marginTop: 0 }}>Records per area (selected month)</h4>
             <div style={{ width: "100%", height: 320 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={areaRecData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
@@ -543,7 +543,7 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
               </ResponsiveContainer>
             </div>
             {areaRecData.length === 0 && (
-              <div style={{ opacity: 0.7, marginTop: 6 }}>No hay registros para ese mes/año.</div>
+              <div style={{ opacity: 0.7, marginTop: 6 }}>No records for this month/year.</div>
             )}
           </div>
         </>
