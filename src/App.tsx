@@ -7,6 +7,7 @@ import InventoryView from './pages/InventoryView'
 import Records from './pages/Records'
 import Catalog from './pages/Catalog'
 import Threshold from './pages/Threshold'
+import Archived from './pages/Archived'
 import MonthlyInventory from './pages/MonthlyInventory'
 import AdminCatalog from './pages/AdminCatalog'
 import ChangePassword from "./components/ChangePassword";
@@ -116,6 +117,7 @@ export default function App(){
             <Route path="/admin-catalog" element={<AdminCatalog user={user}/>} />
             <Route path="/dashboard" element={<Dashboard user={user}/>} /> {/* <-- NUEVO */}
             <Route path="*" element={<CreateRecords user={user}/>} />
+            <Route path="/archived" element={<Archived user={user}/>} />
           </Routes>
         }
       </div>
