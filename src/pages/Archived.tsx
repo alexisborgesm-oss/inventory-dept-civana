@@ -43,7 +43,7 @@ const Archived: React.FC<{user:User}> = ({user})=>{
       // Si tu vista no tiene department_id, quita el .eq('department_id', ...) y
       // el filtrado se hará abajo por fecha y (si hace falta) por dept en cliente.
       let q = supabase
-        .from('archived_items')
+        .from('v_archived_items')
         .select('*') // la vista devuelve los campos; mapeamos abajo de forma robusta
         .not('deleted_at', 'is', null)
 
