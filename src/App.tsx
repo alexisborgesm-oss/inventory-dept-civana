@@ -186,6 +186,7 @@ const Nav: React.FC<{
               {(user.role==='admin' || user.role==='super_admin') && <Link to="/threshold">Threshold</Link>}
               {(user.role==='admin' || user.role==='super_admin') && <Link to="/monthly-inventory">Monthly Inventory</Link>}
               {(user.role==='super_admin' || user.role==='admin') && <Link to="/admin-catalog">Admin-Catalog</Link>}
+               {(user.role==='super_admin' || user.role==='admin') && <Link to="/archived">Archived</Link>}{/* <-- NUEVO */}
               {(user.role==='super_admin' || user.role==='admin') && <Link to="/dashboard">Dashboard</Link>}{/* <-- NUEVO */}
               <a onClick={onLogout}>Logout</a>
             </div>
