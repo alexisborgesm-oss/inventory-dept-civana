@@ -1,4 +1,3 @@
-
 import React, { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../utils/supabase'
 import * as XLSX from 'xlsx'
@@ -32,65 +31,88 @@ const Archived: React.FC<{user:User}> = ({user})=>{
     setDepartments(data||[])
   })() },[user.role])
 
-  // ==== Cargar artículos eliminados ====
+  // ==== Cargar artículos eliminados (desde la vista archived_items) ====
   useEffect(()=>{ (async ()=>{
+    if(user.role==='standard') return
     if(user.role==='super_admin' && !selectedDept) return
 
     setLoading(true)
-    let q = supabase
-      .from('v_archived_items')
-      .select(`
-        id,
-        name,
-        deleted_at,
-        category_id,
-        categories(name, department_id),
-        area_items!inner(area_id),
-        area_items(areas(name))
-      `).eq('department_id', X)
-      .gte('deleted_at', 'YYYY-MM-01').lt('deleted_at', 'YYYY-MM-01' + 1 mes)
-      .not('deleted_at', 'is', null)
+    try{
+      // Base query: vista ya creada por ti
+      // Necesitamos department_id para filtrar en el servidor (mejor performance).
+      // Si tu vista no tiene department_id, quita el .eq('department_id', ...) y
+      // el filtrado se hará abajo por fecha y (si hace falta) por dept en cliente.
+      let q = supabase
+        .from('archived_items')
+        .select('*') // la vista devuelve los campos; mapeamos abajo de forma robusta
+        .not('deleted_at', 'is', null)
 
-    // Filtro por departamento
-    if(user.role==='admin' && user.department_id){
-      q = q.eq('categories.department_id', user.department_id)
-    } else if(user.role==='super_admin' && selectedDept){
-      q = q.eq('categories.department_id', selectedDept)
+      // Filtro por departamento (server-side, si la vista lo expone)
+      if(user.role === 'admin' && user.department_id){
+        q = q.eq('department_id', user.department_id)
+      } else if(user.role === 'super_admin' && selectedDept){
+        q = q.eq('department_id', selectedDept)
+      }
+
+      // Filtro por mes/año (server-side si ambos están set)
+      if (month && year){
+        // build [from, to)
+        const from = new Date(Number(year), Number(month)-1, 1)
+        const to = new Date(from)
+        to.setMonth(from.getMonth() + 1)
+
+        const fromStr = from.toISOString()
+        const toStr = to.toISOString()
+
+        q = q.gte('deleted_at', fromStr).lt('deleted_at', toStr)
+      }
+
+      const { data, error } = await q
+      if(error) throw error
+
+      // Mapeo robusto: soporta item_id/id, item_name/name, etc.
+      const rows: ItemDeleted[] = (data||[]).map((r:any)=>({
+        id: Number(r.id ?? r.item_id),
+        name: String(r.name ?? r.item_name ?? '—'),
+        category_name: String(r.category_name ?? '—'),
+        area_name: r.area_name ?? null,
+        deleted_at: String(r.deleted_at)
+      }))
+
+      // Si solo vino uno de los filtros (mes o año), filtramos en cliente.
+      let filtered = rows
+      if ((month && !year) || (!month && year)) {
+        filtered = rows.filter(rr=>{
+          const d = new Date(rr.deleted_at)
+          const m = d.getMonth() + 1
+          const y = d.getFullYear()
+          if (month && !year) return m === month
+          if (year && !month) return y === year
+          return true
+        })
+      }
+
+      setItems(filtered)
+    }catch(err:any){
+      alert(err?.message || String(err))
+    }finally{
+      setLoading(false)
     }
-
-    const { data, error } = await q
-    if(error){ alert(error.message); setLoading(false); return }
-
-    let rows: ItemDeleted[] = (data||[]).map((r:any)=>({
-      id: r.id,
-      name: r.name,
-      category_name: r.categories?.name || '—',
-      area_name: r.area_items?.[0]?.areas?.name || '—',
-      deleted_at: r.deleted_at
-    }))
-
-    // Filtro por mes y año
-    if(month || year){
-      rows = rows.filter(r=>{
-        const d = new Date(r.deleted_at)
-        const m = d.getMonth() + 1
-        const y = d.getFullYear()
-        return (!month || m===month) && (!year || y===year)
-      })
-    }
-
-    setItems(rows)
-    setLoading(false)
   })() },[user.role, selectedDept, month, year, user.department_id])
 
   // ==== Agrupar por categoría ====
   const grouped = useMemo(()=>{
     const map: Record<string, ItemDeleted[]> = {}
     for(const it of items){
-      if(!map[it.category_name]) map[it.category_name] = []
-      map[it.category_name].push(it)
+      const key = it.category_name || '—'
+      if(!map[key]) map[key] = []
+      map[key].push(it)
     }
-    return map
+    // Ordenar por nombre de categoría y por fecha dentro de cada grupo
+    const sorted: Array<[string, ItemDeleted[]]> = Object.entries(map)
+      .sort((a,b)=> a[0].localeCompare(b[0]))
+      .map(([cat, rows])=> [cat, rows.sort((r1, r2)=> +new Date(r2.deleted_at) - +new Date(r1.deleted_at))] as [string,ItemDeleted[]])
+    return Object.fromEntries(sorted)
   },[items])
 
   // ==== Exportar a Excel ====
@@ -174,7 +196,7 @@ const Archived: React.FC<{user:User}> = ({user})=>{
               </thead>
               <tbody>
                 {rows.map(r=>(
-                  <tr key={r.id} style={{borderTop:'1px solid #eee'}}>
+                  <tr key={`${r.id}-${r.area_name ?? 'na'}`} style={{borderTop:'1px solid #eee'}}>
                     <td style={{padding:'6px 8px'}}>{r.name}</td>
                     <td style={{padding:'6px 8px'}}>{r.area_name||'—'}</td>
                     <td style={{padding:'6px 8px'}}>{new Date(r.deleted_at).toLocaleString()}</td>
