@@ -296,11 +296,11 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
           >
             New area
           </button>
-          <table><thead><tr><th>Name</th><th>Department</th><th>Actions</th></tr></thead><tbody>
+          <table><thead><tr><th>Name</th>{/*<th>Department</th>*/}<th>Actions</th></tr></thead><tbody>
             {filteredAreasForTable.map(a=>(
               <tr key={a.id}>
                 <td>{a.name}</td>
-                <td>{a.department_id}</td>
+                {/* <td>{a.department_id}</td>*/}
                 <td style={{display:'flex',gap:8}}>
                   <button className="btn btn-secondary" onClick={()=>openModal('area', a)}>Modify</button>
                   {/* Delete removido intencionalmente */}
