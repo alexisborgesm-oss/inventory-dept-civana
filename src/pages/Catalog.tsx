@@ -327,11 +327,11 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
           >
             New category
           </button>
-          <table><thead><tr><th>Name</th><th>Department</th><th>Actions</th></tr></thead><tbody>
+          <table><thead><tr><th>Name</th>{/*<th>Department</th>*/}<th>Actions</th></tr></thead><tbody>
             {cats.map(c=>(
               <tr key={c.id}>
                 <td>{c.name}</td>
-                <td>{c.department_id ?? ''}</td>
+                {/*<td>{c.department_id ?? ''}</td>*/}
                 <td style={{display:'flex',gap:8}}>
                   <button className="btn btn-secondary" onClick={()=>openModal('category', c)}>Modify</button>
                   {/* Delete removido intencionalmente */}
@@ -347,12 +347,12 @@ const Catalog: React.FC<{user:User}> = ({user})=>{
         <section>
           <h4>Items</h4>
           <button className="btn btn-primary" onClick={()=>openModal('item', { name:'', category_id:null, unit:'', vendor:'', is_valuable:false, article_number:null })}>New item</button>
-          <table><thead><tr><th>Name</th><th>Category</th><th>Unit</th><th>Vendor</th><th>Article #</th><th>Actions</th></tr></thead><tbody>
+          <table><thead><tr><th>Name</th><th>Category</th>{/*<th>Unit</th>*/}<th>Vendor</th><th>Article #</th><th>Actions</th></tr></thead><tbody>
             {visibleItems.map(i=>(
               <tr key={i.id}>
                 <td>{i.name}</td>
                 <td>{i.category_id ? (catNameById[i.category_id] ?? i.category_id) : ''}</td>
-                <td>{i.unit||''}</td>
+                {/*<td>{i.unit||''}</td>*/}
                 <td>{i.vendor||''}</td>
                 <td>{i.article_number||''}</td>
                 <td style={{display:'flex',gap:8, flexWrap:'wrap'}}>
