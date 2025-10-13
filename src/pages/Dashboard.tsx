@@ -120,7 +120,7 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
         <div style={{ fontWeight: 600 }}>{label}</div>
         <div>
           {v} record{v === 1 ? "" : "s"}
-          {v === 0 ? " (sin registros)" : ""}
+          {v === 0 ? " (no records)" : ""}
         </div>
       </div>
     );
@@ -615,7 +615,7 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
             {/* Chips con áreas sin registros */}
             {zeroAreaNames.size > 0 && (
               <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                <span style={{ opacity: 0.7, fontSize: 12 }}>Sin registros:</span>
+                <span style={{ opacity: 0.7, fontSize: 12 }}>No records:</span>
                 {Array.from(zeroAreaNames).map((name) => (
                   <span
                     key={name}
