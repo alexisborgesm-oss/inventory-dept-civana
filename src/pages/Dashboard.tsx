@@ -296,12 +296,12 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
       categories: kCats,
       items: kItems,
       last30,
-      lastDateLabel: lastDate
-        ? `${lastDate.toLocaleDateString()} ${lastDate.toLocaleTimeString([], {
+      lastDateLabel: lastDate||"—",
+       /* ? `${lastDate.toLocaleDateString()} ${lastDate.toLocaleTimeString([], {
             hour: "2-digit",
             minute: "2-digit",
           })}`
-        : "—",
+        : "—",*/
     };
   }, [areas, categories, items, records]);
 
