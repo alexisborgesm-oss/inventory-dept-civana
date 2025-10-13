@@ -284,7 +284,7 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
 
     const lastDate =
       records.length > 0
-        ? new Date(
+        ? fmtDateOnly(
             [...records].sort(
               (a, b) => +fmtDateOnly(b.inventory_date) - +fmtDateOnly(a.inventory_date)
             )[0].inventory_date
