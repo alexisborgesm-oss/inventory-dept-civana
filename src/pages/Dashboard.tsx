@@ -191,39 +191,21 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
   }, [deptId, selYear, selMonth]);
 
   // ====== NUEVO: Records por área (vista v_records_by_area_month) ======
- useEffect(() => {
-  if (!deptId) return;
-  loadRecordsByArea(deptId, selYear, selMonth);
-  // importante incluir `areas` para recomputar cuando cambian las áreas
-}, [deptId, selYear, selMonth, areas]);
+  useEffect(() => {
+    if (!deptId) return;
+    (async function loadRecordsByArea() {
+      const { data, error } = await supabase
+        .from("v_records_by_area_month")
+        .select("area_name,records_count")
+        .eq("department_id", deptId)
+        .eq("year", selYear)
+        .eq("month", selMonth)
+        .order("records_count", { ascending: false });
 
-async function loadRecordsByArea(departmentId: number, year: number, month: number) {
-  const { data, error } = await supabase
-    .from('v_records_by_area_month')
-    .select('area_id, area_name, records_count')
-    .eq('department_id', departmentId)
-    .eq('year', year)
-    .eq('month', month);
-
-  if (error) { alert(error.message); return; }
-
-  // Mapa con los conteos que devuelve la vista (solo >0)
-  const countByAreaId = new Map<number, number>();
-  (data || []).forEach((r: any) => {
-    countByAreaId.set(Number(r.area_id), Number(r.records_count || 0));
-  });
-
-  // Construir la serie con TODAS las áreas del departamento y rellenar con 0
-  const full = (areas || [])
-    .filter(a => a.department_id === departmentId) // para super_admin; para admin ya vienen filtradas
-    .map(a => ({
-      name: a.name,
-      count: countByAreaId.get(a.id) || 0
-    }));
-
-  setAreaRecData(full);
-}
-
+      if (error) { alert(error.message); return; }
+      setAreaRecData((data || []).map((r: any) => ({ name: r.area_name, count: r.records_count })));
+    })();
+  }, [deptId, selYear, selMonth]);
 
   // ====== KPIs ======
   const KPI = useMemo(() => {
