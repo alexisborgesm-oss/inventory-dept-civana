@@ -434,7 +434,7 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
             <Kpi title="Categories" value={KPI.categories} />
             <Kpi title="Items" value={KPI.items} />
             <Kpi title="Records (last 30d)" value={KPI.last30} />
-            <Kpi title="Last saved" value={KPI.lastDateLabel} />
+            <Kpi title="Last record" value={KPI.lastDateLabel} />
           </div>
 
           {/* Actividad mensual (últimos 6 meses) */}
