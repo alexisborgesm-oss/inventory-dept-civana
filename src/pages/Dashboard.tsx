@@ -78,6 +78,54 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
   // NUEVO: Records por área (mes/año)
   const [areaRecData, setAreaRecData] = useState<Array<{ name: string; count: number }>>([]);
 
+  // Conjunto con los nombres de áreas sin registros
+  const zeroAreaNames = useMemo(
+    () => new Set(areaRecData.filter(d => d.count === 0).map(d => d.name)),
+    [areaRecData]
+  );
+
+  // Tick personalizado para el eje X: gris + itálica si count === 0
+  const ZeroAwareTick = (props: any) => {
+    const { x, y, payload } = props;
+    const name = payload?.value ?? "";
+    const isZero = zeroAreaNames.has(name);
+    return (
+      <text
+        x={x}
+        y={y + 10}
+        textAnchor="middle"
+        fontSize={12}
+        fill={isZero ? "#9aa0a6" : "#374151"}
+        fontStyle={isZero ? ("italic" as const) : ("normal" as const)}
+      >
+        {name}
+      </text>
+    );
+  };
+
+  // Tooltip que explica cuando es 0
+  const AreaTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload || !payload.length) return null;
+    const v = Number(payload[0].value || 0);
+    return (
+      <div
+        style={{
+          background: "#fff",
+          border: "1px solid #e5e7eb",
+          borderRadius: 8,
+          padding: "6px 8px",
+          boxShadow: "0 4px 14px rgba(0,0,0,.08)",
+        }}
+      >
+        <div style={{ fontWeight: 600 }}>{label}</div>
+        <div>
+          {v} record{v === 1 ? "" : "s"}
+          {v === 0 ? " (sin registros)" : ""}
+        </div>
+      </div>
+    );
+  };
+
   // ===== Load departments (only super_admin) =====
   useEffect(() => {
     if (!isSA) return;
@@ -191,6 +239,7 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
   }, [deptId, selYear, selMonth]);
 
   // ====== NUEVO: Records por área (vista v_records_by_area_month) ======
+  // Ajuste: se muestran TODAS las áreas del departamento, con 0 si no tienen registros
   useEffect(() => {
     if (!deptId) return;
     (async function loadRecordsByArea() {
@@ -199,13 +248,28 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
         .select("area_name,records_count")
         .eq("department_id", deptId)
         .eq("year", selYear)
-        .eq("month", selMonth)
-        .order("records_count", { ascending: false });
+        .eq("month", selMonth);
 
       if (error) { alert(error.message); return; }
-      setAreaRecData((data || []).map((r: any) => ({ name: r.area_name, count: r.records_count })));
+
+      // Mapa con las áreas que sí tienen registros
+      const counts = new Map<string, number>(
+        (data || []).map((r: any) => [r.area_name as string, Number(r.records_count || 0)])
+      );
+
+      // Unir con TODAS las áreas del departamento (las que no aparezcan -> 0)
+      const merged = (areas || [])
+        .filter(a => a.department_id === deptId)
+        .map(a => ({
+          name: a.name,
+          count: counts.get(a.name) || 0
+        }))
+        // Orden: primero por count desc, luego alfabético (estable)
+        .sort((a, b) => (b.count - a.count) || a.name.localeCompare(b.name));
+
+      setAreaRecData(merged);
     })();
-  }, [deptId, selYear, selMonth]);
+  }, [deptId, selYear, selMonth, areas]);
 
   // ====== KPIs ======
   const KPI = useMemo(() => {
@@ -532,16 +596,44 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
             <h4 style={{ marginTop: 0 }}>Records per area (selected month)</h4>
             <div style={{ width: "100%", height: 320 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={areaRecData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                <BarChart data={areaRecData} margin={{ top: 10, right: 20, left: 0, bottom: 25 }}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
+                  <XAxis
+                    dataKey="name"
+                    interval={0}
+                    height={50}
+                    tick={(tickProps) => <ZeroAwareTick {...tickProps} />}
+                  />
                   <YAxis allowDecimals={false} />
-                  <Tooltip />
+                  <Tooltip content={<AreaTooltip />} />
                   <Legend />
                   <Bar dataKey="count" name="Records" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
+
+            {/* Chips con áreas sin registros */}
+            {zeroAreaNames.size > 0 && (
+              <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <span style={{ opacity: 0.7, fontSize: 12 }}>Sin registros:</span>
+                {Array.from(zeroAreaNames).map((name) => (
+                  <span
+                    key={name}
+                    style={{
+                      fontSize: 12,
+                      padding: "4px 8px",
+                      borderRadius: 999,
+                      background: "#f3f4f6",
+                      color: "#6b7280",
+                      fontStyle: "italic",
+                    }}
+                  >
+                    {name}
+                  </span>
+                ))}
+              </div>
+            )}
+
             {areaRecData.length === 0 && (
               <div style={{ opacity: 0.7, marginTop: 6 }}>No records for this month/year.</div>
             )}
