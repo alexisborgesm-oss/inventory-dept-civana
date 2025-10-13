@@ -391,6 +391,7 @@ const InventoryView: React.FC<{user:User}> = ({user})=>{
                     <td colSpan={colCount}
                         style={{
                           background:'#e9f0fb',
+                          textAlign:'center',
                           fontWeight:600,
                           borderTop:'1px solid #d1d9e6',
                           borderBottom:'1px solid #d1d9e6'
