@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { fmtDateOnly, fmtTimestamp } from '../utils/dateOnly'
 import { supabase } from "../utils/supabase";
 import {
   ResponsiveContainer,
@@ -285,7 +286,7 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
       records.length > 0
         ? new Date(
             [...records].sort(
-              (a, b) => +new Date(b.inventory_date) - +new Date(a.inventory_date)
+              (a, b) => +fmtDateOnly(b.inventory_date) - +fmtDateOnly(a.inventory_date)
             )[0].inventory_date
           )
         : null;
