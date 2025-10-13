@@ -215,14 +215,14 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
 
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 30);
-    const last30 = records.filter((r) => new Date(r.created_at) >= cutoff).length;
+    const last30 = records.filter((r) => new Date(r.inventory_date) >= cutoff).length;
 
     const lastDate =
       records.length > 0
         ? new Date(
             [...records].sort(
-              (a, b) => +new Date(b.created_at) - +new Date(a.created_at)
-            )[0].created_at
+              (a, b) => +new Date(b.inventory_date) - +new Date(a.inventory_date)
+            )[0].inventory_date
           )
         : null;
 
@@ -244,7 +244,7 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
   const activitySeries = useMemo(() => {
     const map = new Map<string, number>();
     records.forEach((r) => {
-      const d = new Date(r.created_at);
+      const d = new Date(r.inventory_date);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
       map.set(key, (map.get(key) || 0) + 1);
     });
