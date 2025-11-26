@@ -40,13 +40,12 @@ type MonthlyInv = {
 };
 type RecordRow = { id: number; area_id: number; inventory_date: string; created_at: string };
 
-// NUEVO: filas de spot inventory (cantidad actual por artículo)
-type SpotRow = {
-  id: number;
+// NUEVO: fila cruda de la vista v_current_stock_by_item
+type CurrentStockRow = {
   department_id: number;
   item_id: number;
-  qty_current: number;
-  created_at: string;
+  current_qty: number;
+  from_spot: boolean;
 };
 
 const monthShort = (m: number) =>
@@ -72,8 +71,6 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
   const [records, setRecords] = useState<RecordRow[]>([]);
   const [thresholds, setThresholds] = useState<Threshold[]>([]);
   const [mnlys, setMnlys] = useState<MonthlyInv[]>([]);
-  // NUEVO: spot inventories del departamento
-  const [spotRows, setSpotRows] = useState<SpotRow[]>([]);
 
   // UI
   const [loading, setLoading] = useState(false);
@@ -87,8 +84,13 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
   // Records por usuario (mes/año)
   const [userRecData, setUserRecData] = useState<Array<{ name: string; count: number }>>([]);
 
-  // NUEVO: Records por área (mes/año)
+  // Records por área (mes/año)
   const [areaRecData, setAreaRecData] = useState<Array<{ name: string; count: number }>>([]);
+
+  // NUEVO: stock actual por ítem (vista v_current_stock_by_item)
+  const [currentStock, setCurrentStock] = useState<CurrentStockRow[]>([]);
+  const [csCategoryFilter, setCsCategoryFilter] = useState<number | "all">("all");
+  const [csLimit, setCsLimit] = useState<number>(10); // Top 10 por defecto
 
   // Conjunto con los nombres de áreas sin registros
   const zeroAreaNames = useMemo(
@@ -157,76 +159,64 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
     setLoading(true);
     (async () => {
       try {
-        const [
-          { data: a },
-          { data: c },
-          { data: it },
-          { data: rec },
-          { data: thr },
-          { data: mi },
-          { data: sp },
-        ] = await Promise.all([
-          supabase
-            .from("areas")
-            .select("id,name,department_id")
-            .eq("department_id", deptId),
-          supabase
-            .from("categories")
-            .select("id,name,department_id,tagged")
-            .eq("department_id", deptId),
-          supabase
-            .from("items")
-            .select("id,name,category_id,unit,vendor,article_number,is_valuable")
-            .in(
-              "category_id",
-              (
+        const [{ data: a }, { data: c }, { data: it }, { data: rec }, { data: thr }, { data: mi }] =
+          await Promise.all([
+            supabase
+              .from("areas")
+              .select("id,name,department_id")
+              .eq("department_id", deptId),
+            supabase
+              .from("categories")
+              .select("id,name,department_id,tagged")
+              .eq("department_id", deptId),
+            supabase
+              .from("items")
+              .select("id,name,category_id,unit,vendor,article_number,is_valuable")
+              .in(
+                "category_id",
                 (
-                  await supabase
-                    .from("categories")
-                    .select("id")
-                    .eq("department_id", deptId)
-                ).data || []
-              ).map((r: any) => r.id)
-            ),
-          supabase
-            .from("records")
-            .select("id,area_id,inventory_date,created_at")
-            .in(
-              "area_id",
-              (
+                  (
+                    await supabase
+                      .from("categories")
+                      .select("id")
+                      .eq("department_id", deptId)
+                  ).data || []
+                ).map((r: any) => r.id)
+              ),
+            supabase
+              .from("records")
+              .select("id,area_id,inventory_date,created_at")
+              .in(
+                "area_id",
                 (
-                  await supabase
-                    .from("areas")
-                    .select("id")
-                    .eq("department_id", deptId)
-                ).data || []
-              ).map((r: any) => r.id)
-            )
-            .order("created_at", { ascending: false }),
-          supabase
-            .from("thresholds")
-            .select("area_id,item_id,expected_qty")
-            .in(
-              "area_id",
-              (
+                  (
+                    await supabase
+                      .from("areas")
+                      .select("id")
+                      .eq("department_id", deptId)
+                  ).data || []
+                ).map((r: any) => r.id)
+              )
+              .order("created_at", { ascending: false }),
+            supabase
+              .from("thresholds")
+              .select("area_id,item_id,expected_qty")
+              .in(
+                "area_id",
                 (
-                  await supabase
-                    .from("areas")
-                    .select("id")
-                    .eq("department_id", deptId)
-                ).data || []
-              ).map((r: any) => r.id)
-            ),
-          supabase
-            .from("monthly_inventories")
-            .select("id,department_id,month,year,item_id,qty_total")
-            .eq("department_id", deptId),
-          // NUEVO: spot inventories del departamento (cantidad actual por item)
-          supabase
-            .from("spot_inventories")
-            .select("id,department_id,item_id,qty_current,created_at")
-            .eq("department_id", deptId),
-        ]);
+                  (
+                    await supabase
+                      .from("areas")
+                      .select("id")
+                      .eq("department_id", deptId)
+                  ).data || []
+                ).map((r: any) => r.id)
+              ),
+            supabase
+              .from("monthly_inventories")
+              .select("id,department_id,month,year,item_id,qty_total")
+              .eq("department_id", deptId),
+          ]);
 
         setAreas(a || []);
         setCategories(c || []);
@@ -234,7 +224,6 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
         setRecords(rec || []);
         setThresholds(thr || []);
         setMnlys(mi || []);
-        setSpotRows((sp || []) as SpotRow[]);
 
         if (!itemForSeries) {
           const first = (it || [])[0]?.id ?? "";
@@ -263,7 +252,7 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
     })();
   }, [deptId, selYear, selMonth]);
 
-  // ====== NUEVO: Records por área (vista v_records_by_area_month) ======
+  // ====== Records por área (vista v_records_by_area_month) ======
   useEffect(() => {
     if (!deptId) return;
     (async function loadRecordsByArea() {
@@ -291,6 +280,20 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
       setAreaRecData(merged);
     })();
   }, [deptId, selYear, selMonth, areas]);
+
+  // ====== NUEVO: cargar v_current_stock_by_item ======
+  useEffect(() => {
+    if (!deptId) return;
+    (async function loadCurrentStock() {
+      const { data, error } = await supabase
+        .from("v_current_stock_by_item")
+        .select("department_id,item_id,current_qty,from_spot")
+        .eq("department_id", deptId);
+
+      if (error) { alert(error.message); return; }
+      setCurrentStock((data || []) as CurrentStockRow[]);
+    })();
+  }, [deptId]);
 
   // ====== KPIs ======
   const KPI = useMemo(() => {
@@ -343,11 +346,9 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
     return res;
   }, [records]);
 
-  // ====== Low stock (último monthly vs thresholds + Spot) ======
+  // ====== Low stock (último monthly vs thresholds) ======
   const lowStockRows = useMemo(() => {
     if (!mnlys.length || !thresholds.length) return [];
-
-    // 1) último (year,month) del depto en monthly_inventories
     const sorted = [...mnlys].sort((a, b) =>
       a.year !== b.year ? b.year - a.year : b.month - a.month
     );
@@ -355,31 +356,14 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
     const latestM = sorted[0]?.month;
     if (!latestY || !latestM) return [];
 
-    // 2) Total por item en monthly (último corte) -> baseline
-    const monthlyByItem = new Map<number, number>();
+    const totalByItem = new Map<number, number>();
     sorted
       .filter((r) => r.year === latestY && r.month === latestM && r.item_id)
       .forEach((r) => {
         const iid = r.item_id as number;
-        monthlyByItem.set(iid, (monthlyByItem.get(iid) || 0) + Number(r.qty_total || 0));
+        totalByItem.set(iid, (totalByItem.get(iid) || 0) + Number(r.qty_total || 0));
       });
 
-    // 3) Último Spot Inventory por item (cantidad actual absoluta)
-    //    Elegimos el registro más reciente por item_id (dentro del departamento)
-    const latestSpotByItem = new Map<number, number>();
-    const latestSpotTs = new Map<number, number>(); // para comparar fechas
-
-    spotRows.forEach((s) => {
-      const iid = s.item_id;
-      const ts = new Date(s.created_at).getTime();
-      const prevTs = latestSpotTs.get(iid);
-      if (prevTs === undefined || ts > prevTs) {
-        latestSpotTs.set(iid, ts);
-        latestSpotByItem.set(iid, Number(s.qty_current || 0));
-      }
-    });
-
-    // 4) Expected por item (suma thresholds de todas las áreas del depto)
     const expectedByItem = new Map<number, number>();
     thresholds.forEach((t) => {
       expectedByItem.set(
@@ -388,14 +372,9 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
       );
     });
 
-    // 5) Current por item usando:
-    //    - si hay Spot => usar qty_current (es el estado actual real)
-    //    - si no hay Spot => usar último Monthly
     const rows = Array.from(expectedByItem.entries())
       .map(([item_id, expected]) => {
-        const spot = latestSpotByItem.get(item_id);
-        const base = monthlyByItem.get(item_id) || 0;
-        const current = spot !== undefined ? spot : base;
+        const current = totalByItem.get(item_id) || 0;
         return { item_id, expected, current, deficit: current - expected };
       })
       .filter((r) => r.current < r.expected)
@@ -406,7 +385,7 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
       ...r,
       item_name: items.find((it) => it.id === r.item_id)?.name || `#${r.item_id}`,
     }));
-  }, [mnlys, thresholds, items, spotRows]);
+  }, [mnlys, thresholds, items]);
 
   // ====== Serie mensual por artículo (últimos 12 meses) ======
   const itemQtySeries = useMemo(() => {
@@ -432,6 +411,65 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
       return { label: row.label, qty: map.get(key) || 0 };
     });
   }, [deptId, itemForSeries, mnlys]);
+
+  // ====== NUEVO: filas calculadas para "Current stock by item" ======
+  const currentStockRows = useMemo(() => {
+    if (!currentStock.length) return [];
+
+    const catNameById = new Map<number, string>();
+    categories.forEach(c => {
+      if (c.id != null) catNameById.set(c.id, c.name);
+    });
+
+    const expectedByItem = new Map<number, number>();
+    thresholds.forEach(t => {
+      expectedByItem.set(
+        t.item_id,
+        (expectedByItem.get(t.item_id) || 0) + Number(t.expected_qty || 0)
+      );
+    });
+
+    const itemById = new Map<number, Item>();
+    items.forEach(it => { itemById.set(it.id, it); });
+
+    const rows = currentStock.map(r => {
+      const it = itemById.get(r.item_id);
+      const current = Number(r.current_qty || 0);
+      const expected = expectedByItem.get(r.item_id) || 0;
+      const category_id = it?.category_id ?? null;
+      const category_name = category_id != null ? (catNameById.get(category_id) || "") : "";
+
+      return {
+        item_id: r.item_id,
+        item_name: it?.name || `#${r.item_id}`,
+        category_id,
+        category_name,
+        current,
+        expected,
+        deficit: current - expected,
+        source: r.from_spot ? "Spot" as const : "Monthly" as const,
+      };
+    });
+
+    // Filtro por categoría
+    let filtered = rows;
+    if (csCategoryFilter !== "all") {
+      filtered = filtered.filter(r => r.category_id === csCategoryFilter);
+    }
+
+    // Orden: mayor déficit (más negativo) primero
+    filtered.sort((a, b) => {
+      const d = a.deficit - b.deficit;
+      if (d !== 0) return d;
+      return a.item_name.localeCompare(b.item_name);
+    });
+
+    // Top N (si csLimit > 0)
+    if (csLimit > 0 && filtered.length > csLimit) {
+      return filtered.slice(0, csLimit);
+    }
+    return filtered;
+  }, [currentStock, categories, thresholds, items, csCategoryFilter, csLimit]);
 
   return (
     <div className="card">
@@ -494,10 +532,10 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
             </div>
           </div>
 
-          {/* Low stock table (ya usando Spot Inventory como estado actual) */}
+          {/* Low stock table (Monthly vs thresholds) */}
           <div className="card">
             <h4 style={{ marginTop: 0 }}>
-              Low stock (latest Monthly Inventory + Spot vs thresholds)
+              Low stock (latest Monthly Inventory vs thresholds)
             </h4>
             {loading ? (
               <div style={{ opacity: 0.75 }}>Loading…</div>
@@ -534,7 +572,104 @@ const Dashboard: React.FC<{ user: User }> = ({ user }) => {
             )}
           </div>
 
-          {/* Serie mensual por artículo (solo Monthly, sin Spot) */}
+          {/* NUEVO: Current stock by item (Spot-adjusted) */}
+          <div className="card">
+            <div
+              style={{
+                display: "flex",
+                gap: 12,
+                alignItems: "center",
+                flexWrap: "wrap",
+                marginBottom: 8,
+              }}
+            >
+              <h4 style={{ margin: 0, flex: "1 1 auto" }}>
+                Current stock by item (Spot-adjusted)
+              </h4>
+
+              {/* Filtro por categoría */}
+              <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span>Category</span>
+                <select
+                  className="select"
+                  value={csCategoryFilter === "all" ? "all" : csCategoryFilter}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setCsCategoryFilter(v === "all" ? "all" : Number(v));
+                  }}
+                >
+                  <option value="all">All</option>
+                  {categories
+                    .slice()
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                </select>
+              </label>
+
+              {/* Top N */}
+              <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span>Show</span>
+                <select
+                  className="select"
+                  value={String(csLimit)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setCsLimit(v === "0" ? 0 : Number(v)); // 0 = All
+                  }}
+                >
+                  <option value="10">Top 10</option>
+                  <option value="20">Top 20</option>
+                  <option value="50">Top 50</option>
+                  <option value="0">All</option>
+                </select>
+              </label>
+            </div>
+
+            {currentStockRows.length === 0 ? (
+              <div style={{ opacity: 0.75 }}>No data for current stock.</div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Item</th>
+                      <th>Category</th>
+                      <th className="right">Current</th>
+                      <th className="right">Expected</th>
+                      <th className="right">Diff</th>
+                      <th>Source</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {currentStockRows.map((r) => (
+                      <tr key={r.item_id}>
+                        <td>{r.item_name}</td>
+                        <td>{r.category_name}</td>
+                        <td className="right">{r.current}</td>
+                        <td className="right">{r.expected}</td>
+                        <td
+                          className="right"
+                          style={{
+                            color: r.deficit < 0 ? "#d32f2f" : undefined,
+                            fontWeight: r.deficit < 0 ? 600 : undefined,
+                          }}
+                        >
+                          {r.deficit}
+                        </td>
+                        <td>{r.source}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Serie mensual por artículo */}
           <div className="card">
             <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
               <h4 style={{ margin: 0, flex: "0 0 auto" }}>Monthly quantities by item</h4>
