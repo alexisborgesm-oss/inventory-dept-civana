@@ -13,6 +13,7 @@ import AdminCatalog from './pages/AdminCatalog'
 import ChangePassword from "./components/ChangePassword";
 import { Modal } from './components/Modal'
 import Dashboard from './pages/Dashboard'  // <-- NUEVO
+import SpotInventory from './pages/SpotInventory'
 
 type UserRow = { id:string, username:string, role:'super_admin'|'admin'|'standard', department_id: number | null }
 
@@ -116,6 +117,7 @@ export default function App(){
             <Route path="/monthly-inventory" element={<MonthlyInventory user={user}/>} />
             <Route path="/admin-catalog" element={<AdminCatalog user={user}/>} />
             <Route path="/dashboard" element={<Dashboard user={user}/>} /> {/* <-- NUEVO */}
+            <Route path="/spot-inventory" element={<SpotInventory user={user} />} />
             <Route path="*" element={<CreateRecords user={user}/>} />
             <Route path="/archived" element={<Archived user={user}/>} />
           </Routes>
@@ -182,9 +184,10 @@ const Nav: React.FC<{
             <button className="btn btn-secondary" onClick={()=>setMenuOpen(!menuOpen)}>More ▾</button>
             <div className="dropdown-menu" onClick={()=>setMenuOpen(false)}>
               <Link to="/records">Records</Link>
+              <Link to="/spot-inventory">Spot Inventory</Link>
               {(user.role==='admin' || user.role==='super_admin') && <Link to="/catalog">Catalog</Link>}
               {(user.role==='admin' || user.role==='super_admin') && <Link to="/threshold">Threshold</Link>}
-              {(user.role==='admin' || user.role==='super_admin') && <Link to="/monthly-inventory">Monthly Inventory</Link>}
+              {(user.role==='admin' || user.role==='super_admin') && <Link to="/monthly-inventory">Monthly Inventory</Link>}              
               {(user.role==='super_admin' || user.role==='admin') && <Link to="/admin-catalog">Admin-Catalog</Link>}
                {(user.role==='super_admin' || user.role==='admin') && <Link to="/archived">Archived</Link>}{/* <-- NUEVO */}
               {(user.role==='super_admin' || user.role==='admin') && <Link to="/dashboard">Dashboard</Link>}{/* <-- NUEVO */}
